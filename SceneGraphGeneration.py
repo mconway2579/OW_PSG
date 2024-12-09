@@ -234,13 +234,13 @@ if __name__ == "__main__":
     from openai import OpenAI
     
 
-    myrobot = robot()
-    print(f"starting robot from observation")
-    myrobot.start()
+    #myrobot = robot()
+    #print(f"starting robot from observation")
+    #myrobot.start()
 
 
-    myrs = real.RealSense(fps=realSenseFPS)
-    myrs.initConnection()
+    #myrs = real.RealSense(fps=realSenseFPS)
+    #myrs.initConnection()
 
     label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
     label_vit.model.eval()
@@ -253,21 +253,22 @@ if __name__ == "__main__":
         api_key= API_KEY,
     )
 
-    goto_vec(myrobot, frontview_vec)
+    #goto_vec(myrobot, frontview_vec)
 
-    rgb_img, depth_img = get_pictures(myrs)
-    depth_scale, K = get_depth_frame_intrinsics(myrs)
-    pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
+    #rgb_img, depth_img = get_pictures(myrs)
+    #depth_scale, K = get_depth_frame_intrinsics(myrs)
+    #pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
     #__init__(self, str_label, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, observation_pose)
+    pose = np.array([0,0,0,0,0,1])
+    
+    obs = Node("dark blue block", rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, pose)
+    obs.display()
 
-    #obs = Node("dark blue block", rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, pose)
-    #obs.display()
-
-    for i in range(5):
-        graph = get_graph(client, label_vit, sam_predictor, myrs, myrobot)
-        display_graph(graph, blocking = True)
-        with open(f"./data_collection/g{i}.pkl", "wb") as f:
-            pickle.dump(graph, f)
+    #for i in range(5):
+    #    graph = get_graph(client, label_vit, sam_predictor, myrs, myrobot)
+    #    display_graph(graph, blocking = True)
+    #    with open(f"./data_collection/g{i}.pkl", "wb") as f:
+    #        pickle.dump(graph, f)
 
 
     myrobot.stop()

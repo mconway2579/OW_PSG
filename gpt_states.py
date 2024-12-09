@@ -137,36 +137,28 @@ if __name__ == "__main__":
     from openai import OpenAI
     import numpy as np
     import cv2
+    import os
+
+    sample = "NYU1449"
+    parent_path = f"/home/max/OW_PSG/SUNRGBD/kv1/NYUdata/{sample}/"
+    rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
+    depth_path = os.path.join(parent_path, f"depth/{sample}.png")
+
+    rgb_image = cv2.imread(rgb_path)
+    depth_image = cv2.imread(depth_path)
+
     
-    cap = cv2.VideoCapture(0)
-    frame = None
-    if not cap.isOpened():
-        print("Error: Could not open webcam.")
-    else:
-        # Capture a single frame
-        ret, frame = cap.read()
-        
-        if ret:
-            # Convert the frame to a NumPy array
-            frame = np.array(frame)
-            print("Image captured and converted to NumPy array.")
-            print("Shape of the array:", frame.shape)
-        else:
-            print("Error: Failed to capture image.")
-        
-        # Release the webcam
-        cap.release()
 
     client = OpenAI(
         api_key= API_KEY,
     )
-    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, frame)
+    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_image)
     print_json(state_json)
     
         
+    fig, axes = plt.subplots(ncols=2)
+    axes[0].imshow(rgb_image)
+    axes[1].imshow(depth_image)
 
-    
-    plt.figure()
-    plt.imshow(frame)
-    plt.show(block = False)
-    input()
+    plt.show()
+
