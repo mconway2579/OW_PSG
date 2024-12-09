@@ -64,32 +64,36 @@ if __name__ == "__main__":
     from openai import OpenAI
     from config import realSenseFPS, topview_vec
 
-    
+    load = True
 
-    myrobot = robot()
-    print(f"starting robot from observation")
-    myrobot.start()
+    my_robot = None
+    myrs = None
+    label_vit = None
+    sam_predictor = None
+    client = None
+    if not load:
+        myrobot = robot()
+        print(f"starting robot from observation")
+        myrobot.start()
 
+        myrs = real.RealSense(fps=realSenseFPS)
+        myrs.initConnection()
 
-    myrs = real.RealSense(fps=realSenseFPS)
-    myrs.initConnection()
+        label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
+        label_vit.model.eval()
+        print(f"{label_vit.model.device=}")
 
-    label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
-    label_vit.model.eval()
-    print(f"{label_vit.model.device=}")
+        sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
+        print(f"{sam_predictor.model.device=}")
 
-    sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
-    print(f"{sam_predictor.model.device=}")
+        client = OpenAI(
+            api_key= API_KEY,
+        )
 
-    client = OpenAI(
-        api_key= API_KEY,
-    )
-
-    goto_vec(myrobot, topview_vec)
+        goto_vec(myrobot, topview_vec)
 
     gm = Graph_Manager()
     inp = "a"
-    load = True
     i = 0
     while inp != "q":
         if load:
