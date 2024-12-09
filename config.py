@@ -9,6 +9,7 @@ realSenseFPS = 30
 
 n_depth_samples = 5
 arm_speed = 0.4
+
 vit_thresh = 0.1
 gpt_model = "gpt-4o"
 gpt_temp = 0.2

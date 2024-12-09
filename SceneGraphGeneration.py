@@ -8,7 +8,7 @@ import open3d as o3d
 import warnings
 from magpie_control.ur5 import pose_vector_to_homog_coord, homog_coord_to_pose_vector
 import networkx as nx
-from gpt_planning import get_state
+from gpt_states import get_state
 import time
 import pickle
 
@@ -20,6 +20,7 @@ def get_observation_patch(obs, edge_color = "r"):
                                 linewidth=2, edgecolor=edge_color, facecolor='none'
                             )
     return rect
+
 def get_refined_depth(rs_wrapper):
     warnings.simplefilter("ignore", category=RuntimeWarning)
     depth_images = []
@@ -80,6 +81,10 @@ class Node:
 
         self.points = None
         self.colors = None
+
+
+        self.OWLv2_logits = None
+        self.sam_logits = None
 
         self.calc_bbox(rgb_img, label_vit)
         self.calc_pcd(rgb_img, depth_img, K, depth_scale, observation_pose, sam_predictor)
