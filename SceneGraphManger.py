@@ -55,52 +55,66 @@ class Graph_Manager:
         plt.show(block = False)
         plt.pause(1)
 if __name__ == "__main__":
-    from magpie_control import realsense_wrapper as real
+    from APIKeys import API_KEY
+    import os
+    import cv2
+    import random
+    from SceneGraphGeneration import intrinsic_obj
     from sam2.sam2_image_predictor import SAM2ImagePredictor
     from magpie_perception.label_owlv2 import LabelOWLv2
-    from magpie_control.ur5 import UR5_Interface as robot
-    from control_scripts import goto_vec
-    from APIKeys import API_KEY
     from openai import OpenAI
-    from config import realSenseFPS, topview_vec
+    from magpie_control.ur5 import homog_coord_to_pose_vector
 
-    load = True
 
-    my_robot = None
-    myrs = None
-    label_vit = None
-    sam_predictor = None
-    client = None
-    if not load:
-        myrobot = robot()
-        print(f"starting robot from observation")
-        myrobot.start()
+    
+    top_dir = f"/home/max/OW_PSG/SUNRGBD/kv1/b3dodata/"
+    samples = [entry for entry in os.listdir(top_dir) if os.path.isdir(os.path.join(top_dir, entry))]
 
-        myrs = real.RealSense(fps=realSenseFPS)
-        myrs.initConnection()
+    label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
+    label_vit.model.eval()
+    print(f"{label_vit.model.device=}")
 
-        label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
-        label_vit.model.eval()
-        print(f"{label_vit.model.device=}")
+    sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
+    print(f"{sam_predictor.model.device=}")
 
-        sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
-        print(f"{sam_predictor.model.device=}")
-
-        client = OpenAI(
-            api_key= API_KEY,
-        )
-
-        goto_vec(myrobot, topview_vec)
+    client = OpenAI(
+        api_key= API_KEY,
+    )
 
     gm = Graph_Manager()
     inp = "a"
     i = 0
     while inp != "q":
-        if load:
-            with open(f"./data_collection/g{i}.pkl", "rb") as f:
-                graph = pickle.load(f)
-        else:
-            graph = get_graph(client, label_vit, sam_predictor, myrs, myrobot)
+        sample = random.choice(samples)
+        parent_path = os.path.join(top_dir, sample)
+
+        rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
+        depth_path = os.path.join(parent_path, f"depth/{sample}_abs.png")
+        rgb_image = cv2.imread(rgb_path)
+        depth_image = cv2.imread(depth_path)
+
+        intrinsics_path = os.path.join(parent_path, f"intrinsics.txt")
+
+        extrinsics_dir_path = os.path.join(parent_path, f"extrinsics/")
+        extrinsics_text_files = [f for f in os.listdir(extrinsics_dir_path) if f.endswith('.txt')]
+        extrinsics_file = os.path.join(extrinsics_dir_path, extrinsics_text_files[0])
+
+        ext_mat = np.genfromtxt(extrinsics_file, delimiter=" ")
+        print(f"ext_mat= \n{ext_mat}")
+
+        intrinsics = np.genfromtxt(intrinsics_path, delimiter=" ")
+
+        print(f"intrinsics=\n{intrinsics}")
+
+
+        K = intrinsic_obj(intrinsics, rgb_image.shape[1], rgb_image.shape[0])
+
+        pose = homog_coord_to_pose_vector(ext_mat)
+
+        depth_scale = 1
+
+        graph = get_graph(client, label_vit, sam_predictor, rgb_image, depth_image, pose, K, depth_scale)
+
         gm.add_graph(graph)
         inp = input("press q to quit: ")
         i+=1

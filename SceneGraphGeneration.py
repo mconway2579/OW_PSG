@@ -1,7 +1,5 @@
 import torch
 import numpy as np
-from control_scripts import get_pictures, get_frames, get_depth_frame_intrinsics
-from config import n_depth_samples, realSenseFPS, topview_vec
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import open3d as o3d
@@ -20,50 +18,6 @@ def get_observation_patch(obs, edge_color = "r"):
                                 linewidth=2, edgecolor=edge_color, facecolor='none'
                             )
     return rect
-
-def get_refined_depth(rs_wrapper):
-    warnings.simplefilter("ignore", category=RuntimeWarning)
-    depth_images = []
-    rgb_img = None
-    for i in range(n_depth_samples):
-        rgb_img, depth_image = get_pictures(rs_wrapper)
-        depth_images.append(depth_image)
-
-    depth_stack = np.stack(depth_images, axis=0)
-    #print(f"{depth_stack.shape=}")
-
-    #Compute mean ignoring 0 values
-    sum_depth_stack = np.sum(depth_stack, axis=0)
-    non_zero_counts = np.count_nonzero(depth_stack, axis=0)
-    #print(f"{sum_depth_stack.shape=}")
-    #print(f"{non_zero_counts.shape=}")
-    mean_depth_image = sum_depth_stack/non_zero_counts#np.divide(sum_depth_stack, non_zero_counts, where=non_zero_counts != 0)
-    mean_depth_image = np.nan_to_num(mean_depth_image, nan=0)
-    #print(mean_depth_image.shape)
-
-    #compute std deviation ignoring 0 values
-    squared_diff_stack = (depth_stack - mean_depth_image[None, :, :]) ** 2
-    squared_diff_stack[depth_stack == 0] = 0  # Ignore zero values
-    sum_squared_diff = np.sum(squared_diff_stack, axis=0)
-    std_dev_image = np.sqrt(sum_squared_diff / non_zero_counts)
-    std_dev_image = np.nan_to_num(std_dev_image, nan=0)
-    #print(f"{std_dev_image.shape=}")
-
-    #get mask of points within 1 standard deviation
-    lower_bounds = mean_depth_image - std_dev_image
-    upper_bounds = mean_depth_image + std_dev_image
-    mask = (depth_stack >= lower_bounds[None, :, :]) & (depth_stack <= upper_bounds[None, :, :])
-    #set points not within one standard deviation to 0
-    filtered_depth_stack = np.where(mask, depth_stack, 0)
-
-    #Compute mean ignoring 0 values and values not within 1 standard deviation
-    sum_depth_stack = np.sum(filtered_depth_stack, axis=0)
-    non_zero_counts = np.count_nonzero(filtered_depth_stack, axis=0)
-    filtered_depth_image = sum_depth_stack/non_zero_counts
-    filtered_depth_image = filtered_depth_image.astype(np.float32)
-
-    warnings.simplefilter("default", category=RuntimeWarning)
-    return filtered_depth_image
 
 class Node:
     def __init__(self, str_label, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, observation_pose):
@@ -101,7 +55,15 @@ class Node:
     def calc_pcd(self, rgb_img, depth_img, K, depth_scale, observation_pose, sam_predictor):
         sam_predictor.set_image(rgb_img)
         sam_box = np.array([self.pix_xmin,  self.pix_ymin,  self.pix_xmax,  self.pix_ymax])
-        sam_mask, sam_scores, sam_logits = sam_predictor.predict(box=sam_box)
+
+
+        # Suppress warnings during the prediction step
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            sam_mask, sam_scores, sam_logits = sam_predictor.predict(box=sam_box)
+
+
+
         self.sam_logits = sam_logits
         sam_mask = np.all(sam_mask, axis=0)
         #expanded_sam_mask = np.expand_dims(sam_mask, axis=-1)
@@ -126,16 +88,16 @@ class Node:
         
      
         #self.pcd, _ = self.pcd.remove_statistical_outlier(nb_neighbors=1000, std_ratio=1.0)
-        pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=100, std_ratio=0.1)
-        voxel_size = 0.005  # adjust based on your data
-        pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+        #pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=100, std_ratio=0.1)
+        voxel_size = 0.001  # adjust based on your data
+        #pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
         #self.pcd_bbox = self.pcd.get_axis_aligned_bounding_box()
         #self.pcd_bbox = pcd.get_minimal_oriented_bounding_box()
         #self.pcd_bbox.color = (1,0,0)
         self.points = np.asarray(pcd.points)
         self.colors = np.asarray(pcd.colors)
         
-    def display(self):
+    def display(self, blocking = False):
         fig, axes = plt.subplots(ncols=2, nrows=2)
         axes[0, 0].imshow(self.rgb_segment)
         axes[0, 0].add_patch(get_observation_patch(self, "r"))
@@ -157,25 +119,22 @@ class Node:
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
         plt.title(f"{self.str_label} Point Cloud")
-        plt.show()
+        plt.show(block = blocking)
+        if not blocking:
+            plt.pause(1)
  
-def get_graph(OAI_Client, label_vit, sam_predictor, rs_wrapper, UR_interface):
+def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K, depth_scale):
     G = nx.DiGraph()
 
-    rgb_img, depth_img = get_pictures(rs_wrapper)
     G.graph["timestamp"] = time.time()
-
-    #depth_img = get_refined_depth(self.rs_wrapper)
-    depth_scale, K = get_depth_frame_intrinsics(rs_wrapper)
-    
-    observation_pose = homog_coord_to_pose_vector(UR_interface.get_cam_pose())
-    G.graph["observation_pose"] = observation_pose
+    G.graph["observation_pose"] = pose
     
 
     _, state_json, _, _ = get_state(OAI_Client, rgb_img)
+    print(state_json)
 
     for object in state_json["objects"]:
-        obj_node = Node(object, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, observation_pose)
+        obj_node = Node(object, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, pose)
         G.add_node(object, data=obj_node)
 
     for edge in state_json["object_relationships"]:
@@ -188,13 +147,14 @@ def get_points(G):
     colors = []
 
     for obj, node in G.nodes(data=True):
-        #C = node["data"].pcd.get_center()
-        #sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
-        #sphere.paint_uniform_color([0, 0, 0])  # Red color for sphere A
-        #sphere.translate(C)
-        #vis.add_geometry(sphere)
-        points.append(node["data"].points)
-        colors.append(node["data"].colors)
+        #print(f"{obj=}")
+        #print(f"{node=}")
+        try:
+            points.append(node["data"].points)
+            colors.append(node["data"].colors)
+        except KeyError:
+            print(f"Key error retriving data from {obj}, {node}")
+        
     
     points = np.concatenate(points, axis=0)
     colors = np.concatenate(colors, axis=0)
@@ -223,54 +183,83 @@ def display_graph(G, blocking = False):
     if not blocking:
         plt.pause(1)
 
+
+class intrinsic_obj:
+    def __init__(self, array, width, height):
+        if array.shape == (3,3):
+            array = array.flatten()
+        #expects array like [518.858   0.    284.582   0.    519.47  208.736   0.      0.      1.   ]
+        #fills in K.width, K.height, K.fx, K.fy, K.ppx, K.ppy
+        self.fx = array[0]
+        self.ppx = array[2]
+        self.fy = array[4]
+        self.ppy = array[5]
+        self.width = width
+        self.height = height
 if __name__ == "__main__":
-    from magpie_control import realsense_wrapper as real
+    from APIKeys import API_KEY
+    import os
+    import cv2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
     from magpie_perception.label_owlv2 import LabelOWLv2
-    from magpie_control.ur5 import UR5_Interface as robot
-    from control_scripts import goto_vec
-    from config import frontview_vec, leftview_vec, rightview_vec, behindview_vec
-    from APIKeys import API_KEY
     from openai import OpenAI
-    
-
-    #myrobot = robot()
-    #print(f"starting robot from observation")
-    #myrobot.start()
 
 
-    #myrs = real.RealSense(fps=realSenseFPS)
-    #myrs.initConnection()
+    sample = "img_0847"
+    parent_path = f"/home/max/OW_PSG/SUNRGBD/kv1/b3dodata/{sample}/"
+
+    rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
+    depth_path = os.path.join(parent_path, f"depth/{sample}_abs.png")
+    rgb_image = cv2.imread(rgb_path)
+    depth_image = cv2.imread(depth_path)
+
+    intrinsics_path = os.path.join(parent_path, f"intrinsics.txt")
+
+    extrinsics_dir_path = os.path.join(parent_path, f"extrinsics/")
+    extrinsics_text_files = [f for f in os.listdir(extrinsics_dir_path) if f.endswith('.txt')]
+    extrinsics_file = os.path.join(extrinsics_dir_path, extrinsics_text_files[0])
+
+    ext_mat = np.genfromtxt(extrinsics_file, delimiter=" ")
+    #print(f"ext_mat= \n{ext_mat}")
+
+    intrinsics = np.genfromtxt(intrinsics_path, delimiter=" ")
+    #print(f"intrinsics=\n{intrinsics}")
+    #print(f"{intrinsics.shape}")
+
+
+    K = intrinsic_obj(intrinsics, rgb_image.shape[1], rgb_image.shape[0])
 
     label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
     label_vit.model.eval()
     print(f"{label_vit.model.device=}")
 
     sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
+
     print(f"{sam_predictor.model.device=}")
 
     client = OpenAI(
         api_key= API_KEY,
     )
 
-    #goto_vec(myrobot, frontview_vec)
+    pose = homog_coord_to_pose_vector(ext_mat)
 
-    #rgb_img, depth_img = get_pictures(myrs)
-    #depth_scale, K = get_depth_frame_intrinsics(myrs)
-    #pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
-    #__init__(self, str_label, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, observation_pose)
-    pose = np.array([0,0,0,0,0,1])
+    depth_scale = 1
     
-    obs = Node("dark blue block", rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, pose)
-    obs.display()
 
-    #for i in range(5):
-    #    graph = get_graph(client, label_vit, sam_predictor, myrs, myrobot)
-    #    display_graph(graph, blocking = True)
-    #    with open(f"./data_collection/g{i}.pkl", "wb") as f:
-    #        pickle.dump(graph, f)
+    #obs = Node("chair", rgb_image, depth_image, label_vit, sam_predictor, K, depth_scale, pose)
+    #obs.display()
+
+    graph = get_graph(client, label_vit, sam_predictor, rgb_image, depth_image, pose, K, depth_scale)
+    #for obj, node in graph.nodes(data=True):
+    #    try:
+    #        node["data"].display()
+    #    except KeyError:
+    #        print(f"Key error retriving data from {obj}, {node}")
+    display_graph(graph, blocking = True)
+    with open(f"./data_collection/g{sample}.pkl", "wb") as f:
+        pickle.dump(graph, f)
 
 
-    myrobot.stop()
-    myrs.disconnect()
+    #myrobot.stop()
+    #myrs.disconnect()
     

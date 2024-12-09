@@ -77,6 +77,8 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 
 - Ensure no object is left unplaced; every object must be included in the relationships field either on another object or on the table.
 - Follow the reasoning steps explicitly before outputting to ensure correctness and completeness.
+- You cannot have an object in a relationship but not in the object list or saftey will be at risk
+- Ensure that the object_relationships are only made up of objects in the objects list
 """)
     user_prompt = f"Give me the state in the given image"
     return system_prompt, user_prompt
