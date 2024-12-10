@@ -9,18 +9,97 @@ import networkx as nx
 from gpt_states import get_state
 import time
 import pickle
+from transformers import OwlViTProcessor, OwlViTForObjectDetection
+from config import vit_model_name, vit_thresh
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-def get_observation_patch(obs, edge_color = "r"):
-    rect = patches.Rectangle(
-                            (obs.pix_xmin, obs.pix_ymin),
-                                obs.pix_xmax - obs.pix_xmin,
-                                obs.pix_ymax - obs.pix_ymin,
-                                linewidth=2, edgecolor=edge_color, facecolor='none'
-                            )
-    return rect
+
+class intrinsic_obj:
+    def __init__(self, array, width, height):
+        if array.shape == (3,3):
+            array = array.flatten()
+        #expects array like [518.858   0.    284.582   0.    519.47  208.736   0.      0.      1.   ]
+        #fills in K.width, K.height, K.fx, K.fy, K.ppx, K.ppy
+        self.fx = array[0]
+        self.ppx = array[2]
+        self.fy = array[4]
+        self.ppy = array[5]
+        self.width = width
+        self.height = height
+
+class OWLv2:
+    def __init__(self):
+        self.processor = OwlViTProcessor.from_pretrained(vit_model_name)
+        self.model = OwlViTForObjectDetection.from_pretrained(vit_model_name)
+
+        self.model.to(torch.device("cuda")) if torch.cuda.is_available() else None
+        self.model.to(torch.device("mps")) if torch.backends.mps.is_available() else None
+        self.model.eval()  # set model to evaluation mode
+    def predict(self, img, querries, k = 1):
+        inputs = self.processor(text=querries, images=img, return_tensors="pt")
+        inputs.to(torch.device("cuda")) if torch.cuda.is_available() else None
+        inputs.to(torch.device("mps")) if torch.backends.mps.is_available() else None
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        target_sizes = torch.tensor([img.shape[:2]])  # (height, width)
+
+        results = self.processor.post_process(outputs=outputs, target_sizes=target_sizes)[0]
+        #print(f"\n\n{results}\n\n")
+        scores = results["scores"]
+        labels = results["labels"]
+        boxes = results["boxes"]
+        
+
+        indices = (scores > vit_thresh).nonzero(as_tuple=True)[0].tolist()
+        #print(f"{indices=}")
+
+        scores = scores[indices]
+        labels = labels[indices]
+        boxes = boxes[indices]
+
+        #print(f"\n\n{scores=}")
+        #print(f"\n\n{labels=}")
+        #print(f"\n\n{boxes=}")
+
+        if k is not None:
+            _, indicies = torch.topk(scores, k, largest = True, sorted=True)
+            scores = scores[indicies]
+            labels = labels[indicies]
+            boxes = boxes[indicies]
+
+            #print(f"\n\n{scores=}")
+            #print(f"\n\n{labels=}")
+            #print(f"\n\n{boxes=}")
+        return scores, boxes
+
+    def __str__(self):
+        return f"OWLv2: {self.model.device}"
+    def __repr__(self):
+        return self.__str__()
+
+class SAM2:
+    def __init__(self):
+        self.sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
+    def predict(self, img, bbox):
+        # Suppress warnings during the prediction step
+        self.sam_predictor.set_image(img)
+
+        sam_mask = None
+        sam_scores = None
+        sam_logits = None
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            sam_mask, sam_scores, sam_logits = self.sam_predictor.predict(box=bbox)
+        sam_mask = np.all(sam_mask, axis=0)
+        return sam_mask, sam_scores, sam_logits
+    def __str__(self):
+        return f"SAM2: {self.sam_predictor.model.device}"
+    def __repr__(self):
+        return self.__str__()
 
 class Node:
-    def __init__(self, str_label, rgb_img, depth_img, label_vit, sam_predictor, K, depth_scale, observation_pose):
+    def __init__(self, str_label, rgb_img, depth_img, vit, sam, K, depth_scale, observation_pose):
         self.str_label = str_label
 
         self.pix_xmin = None
@@ -40,34 +119,25 @@ class Node:
         self.OWLv2_logits = None
         self.sam_logits = None
 
-        self.calc_bbox(rgb_img, label_vit)
-        self.calc_pcd(rgb_img, depth_img, K, depth_scale, observation_pose, sam_predictor)
-    def calc_bbox(self, rgb_img, label_vit):
-        bbox = None
-        with torch.no_grad():
-            bbox = label_vit.label(rgb_img, self.str_label, self.str_label, plot=False, topk=True)
-            bbox = bbox[1][0].tolist()
+        self.calc_bbox(rgb_img, vit)
+        self.calc_pcd(rgb_img, depth_img, K, depth_scale, observation_pose, sam)
+    def calc_bbox(self, rgb_img, vit):
+        
+        bbox = vit.predict(rgb_img, self.str_label)
+        #print(f"{bbox=}")
+        bbox = bbox[1][0].tolist()
         self.pix_xmin = int(bbox[0])
         self.pix_ymin = int(bbox[1])
         self.pix_xmax = int(bbox[2])
         self.pix_ymax = int(bbox[3])
 
-    def calc_pcd(self, rgb_img, depth_img, K, depth_scale, observation_pose, sam_predictor):
-        sam_predictor.set_image(rgb_img)
-        sam_box = np.array([self.pix_xmin,  self.pix_ymin,  self.pix_xmax,  self.pix_ymax])
+    def calc_pcd(self, rgb_img, depth_img, K, depth_scale, observation_pose, sam):
 
-
-        # Suppress warnings during the prediction step
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=UserWarning)
-            sam_mask, sam_scores, sam_logits = sam_predictor.predict(box=sam_box)
-
-
-
+        sam_bbox = np.array([self.pix_xmin,  self.pix_ymin,  self.pix_xmax,  self.pix_ymax])
+        sam_mask, sam_scores, sam_logits = sam.predict(rgb_img, sam_bbox)
         self.sam_logits = sam_logits
-        sam_mask = np.all(sam_mask, axis=0)
-        #expanded_sam_mask = np.expand_dims(sam_mask, axis=-1)
-        
+
+
         self.mask = sam_mask
         self.rgb_segment = rgb_img.copy()
         self.rgb_segment[~sam_mask] = 0
@@ -183,28 +253,22 @@ def display_graph(G, blocking = False):
     if not blocking:
         plt.pause(1)
 
+def get_observation_patch(obs, edge_color = "r"):
+    rect = patches.Rectangle(
+                            (obs.pix_xmin, obs.pix_ymin),
+                                obs.pix_xmax - obs.pix_xmin,
+                                obs.pix_ymax - obs.pix_ymin,
+                                linewidth=2, edgecolor=edge_color, facecolor='none'
+                            )
+    return rect
 
-class intrinsic_obj:
-    def __init__(self, array, width, height):
-        if array.shape == (3,3):
-            array = array.flatten()
-        #expects array like [518.858   0.    284.582   0.    519.47  208.736   0.      0.      1.   ]
-        #fills in K.width, K.height, K.fx, K.fy, K.ppx, K.ppy
-        self.fx = array[0]
-        self.ppx = array[2]
-        self.fy = array[4]
-        self.ppy = array[5]
-        self.width = width
-        self.height = height
+
 if __name__ == "__main__":
     from APIKeys import API_KEY
+    from openai import OpenAI
     import os
     import cv2
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
-    from magpie_perception.label_owlv2 import LabelOWLv2
-    from openai import OpenAI
-
-
+    
     sample = "img_0847"
     parent_path = f"/home/max/OW_PSG/SUNRGBD/kv1/b3dodata/{sample}/"
 
@@ -220,22 +284,16 @@ if __name__ == "__main__":
     extrinsics_file = os.path.join(extrinsics_dir_path, extrinsics_text_files[0])
 
     ext_mat = np.genfromtxt(extrinsics_file, delimiter=" ")
-    #print(f"ext_mat= \n{ext_mat}")
 
     intrinsics = np.genfromtxt(intrinsics_path, delimiter=" ")
-    #print(f"intrinsics=\n{intrinsics}")
-    #print(f"{intrinsics.shape}")
 
 
     K = intrinsic_obj(intrinsics, rgb_image.shape[1], rgb_image.shape[0])
 
-    label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
-    label_vit.model.eval()
-    print(f"{label_vit.model.device=}")
-
-    sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
-
-    print(f"{sam_predictor.model.device=}")
+    owl = OWLv2()
+    print(f"{owl=}")
+    sam = SAM2()
+    print(f"{sam=}")
 
     client = OpenAI(
         api_key= API_KEY,
@@ -246,18 +304,18 @@ if __name__ == "__main__":
     depth_scale = 1
     
 
-    #obs = Node("chair", rgb_image, depth_image, label_vit, sam_predictor, K, depth_scale, pose)
+    #obs = Node("fan", rgb_image, depth_image, owl, sam, K, depth_scale, pose)
     #obs.display()
 
-    graph = get_graph(client, label_vit, sam_predictor, rgb_image, depth_image, pose, K, depth_scale)
+    graph = get_graph(client, owl, sam, rgb_image, depth_image, pose, K, depth_scale)
     #for obj, node in graph.nodes(data=True):
     #    try:
     #        node["data"].display()
     #    except KeyError:
     #        print(f"Key error retriving data from {obj}, {node}")
     display_graph(graph, blocking = True)
-    with open(f"./data_collection/g{sample}.pkl", "wb") as f:
-        pickle.dump(graph, f)
+    #with open(f"./data_collection/g{sample}.pkl", "wb") as f:
+    #    pickle.dump(graph, f)
 
 
     #myrobot.stop()

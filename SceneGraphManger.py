@@ -59,9 +59,7 @@ if __name__ == "__main__":
     import os
     import cv2
     import random
-    from SceneGraphGeneration import intrinsic_obj
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
-    from magpie_perception.label_owlv2 import LabelOWLv2
+    from SceneGraphGeneration import intrinsic_obj, OWLv2, SAM2
     from openai import OpenAI
     from magpie_control.ur5 import homog_coord_to_pose_vector
 
@@ -70,12 +68,10 @@ if __name__ == "__main__":
     top_dir = f"/home/max/OW_PSG/SUNRGBD/kv1/b3dodata/"
     samples = [entry for entry in os.listdir(top_dir) if os.path.isdir(os.path.join(top_dir, entry))]
 
-    label_vit = LabelOWLv2(topk=1, score_threshold=0.01, cpu_override=False)
-    label_vit.model.eval()
-    print(f"{label_vit.model.device=}")
-
-    sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
-    print(f"{sam_predictor.model.device=}")
+    owl = OWLv2()
+    print(f"{owl=}")
+    sam = SAM2()
+    print(f"{sam=}")
 
     client = OpenAI(
         api_key= API_KEY,
@@ -113,13 +109,11 @@ if __name__ == "__main__":
 
         depth_scale = 1
 
-        graph = get_graph(client, label_vit, sam_predictor, rgb_image, depth_image, pose, K, depth_scale)
+        graph = get_graph(client, owl, sam, rgb_image, depth_image, pose, K, depth_scale)
 
         gm.add_graph(graph)
         inp = input("press q to quit: ")
         i+=1
-    myrobot.stop()
-    myrs.disconnect()
 
     
     
