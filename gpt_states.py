@@ -142,7 +142,7 @@ if __name__ == "__main__":
     import os
 
     sample = "NYU1449"
-    parent_path = f"/home/max/OW_PSG/SUNRGBD/kv1/NYUdata/{sample}/"
+    parent_path = f"./SUNRGBD/kv1/NYUdata/{sample}/"
     rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
     depth_path = os.path.join(parent_path, f"depth/{sample}.png")
 

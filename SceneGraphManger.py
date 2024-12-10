@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
 
     
-    top_dir = f"/home/max/OW_PSG/SUNRGBD/kv1/b3dodata/"
+    top_dir = f"./SUNRGBD/kv1/b3dodata/"
     samples = [entry for entry in os.listdir(top_dir) if os.path.isdir(os.path.join(top_dir, entry))]
 
     owl = OWLv2()
