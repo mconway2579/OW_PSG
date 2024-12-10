@@ -81,7 +81,7 @@ if __name__ == "__main__":
     inp = "a"
     i = 0
     while inp != "q":
-        sample = random.choice(samples)
+        sample = "img_0821" if i == 0 else "img_0822"
         parent_path = os.path.join(top_dir, sample)
 
         rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")

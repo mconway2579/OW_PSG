@@ -158,7 +158,7 @@ class Node:
      
         #self.pcd, _ = self.pcd.remove_statistical_outlier(nb_neighbors=1000, std_ratio=1.0)
         #pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=100, std_ratio=0.1)
-        voxel_size = 0.001  # adjust based on your data
+        #voxel_size = 0.001  # adjust based on your data
         #pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
         #self.pcd_bbox = self.pcd.get_axis_aligned_bounding_box()
         #self.pcd_bbox = pcd.get_minimal_oriented_bounding_box()

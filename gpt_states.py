@@ -24,12 +24,12 @@ You should output a JSON object containing the following fields:
    - Is the object on another object?
    - Is the object near another object?
    - Is the object spacially related to another object?
-   - Make sure no object is left unplaced.
+   - Make sure no object is left unrelated.
 
 3. **Establish Relationships**: Once object positions are determined, establish relationships following these rules:
    - Each relationship is a triple `<OBJECT1, RELATIONSHIP, OBJECT2>`, where `OBJECT1` is related to `OBJECT2` by RELATIONSHIP.
 
-4. **Verify Completeness**: Ensure that all objects are covered in the relationships and that none remain without being stacked or placed on the table.
+4. **Verify Completeness**: Ensure that all objects are covered in the relationships and that none remain unrelated.
 
 # Output Format
 
