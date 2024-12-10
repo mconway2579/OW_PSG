@@ -388,11 +388,12 @@ if __name__ == "__main__":
     #obs.display()
 
     graph = get_graph(client, owl, sam, rgb_image, depth_image, pose, K, depth_scale)
-    #for obj, node in graph.nodes(data=True):
-    #    try:
-    #        node["data"].display()
-    #    except KeyError:
-    #        print(f"Key error retriving data from {obj}, {node}")
+    if True:
+        for obj, node in graph.nodes(data=True):
+            try:
+                node["data"].display()
+            except KeyError:
+                print(f"Key error retriving data from {obj}, {node}")
     display_graph(graph, blocking = True)
     #with open(f"./data_collection/g{sample}.pkl", "wb") as f:
     #    pickle.dump(graph, f)

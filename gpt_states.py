@@ -21,12 +21,13 @@ You should output a JSON object containing the following fields:
 1. **Identify Objects**: Begin by analyzing the scene to identify all visible objects.
   
 2. **Determine Object Positions**: For each object, determine its placement in relation to other objects:
-   - Is the object on another block or on the table?
+   - Is the object on another object?
+   - Is the object near another object?
+   - Is the object spacially related to another object?
    - Make sure no object is left unplaced.
 
 3. **Establish Relationships**: Once object positions are determined, establish relationships following these rules:
-   - Record relationships where one object is directly on top of another.
-   - Each relationship is a triple `<OBJECT1, RELATIONSHIP, OBJECT2>`, where `OBJECT1` is related to `OBJECT2`.
+   - Each relationship is a triple `<OBJECT1, RELATIONSHIP, OBJECT2>`, where `OBJECT1` is related to `OBJECT2` by RELATIONSHIP.
 
 4. **Verify Completeness**: Ensure that all objects are covered in the relationships and that none remain without being stacked or placed on the table.
 
@@ -37,7 +38,7 @@ Your output should be formatted as a JSON object, like the example below:
 ```json
 {
   "objects": ["table", "A", "B", "C"],
-  "object_relationships": [["A", "is on", "B"], ["B", "is on", "table"], ["C", "is on", "table"], ["C", "is next to", "B"]]
+  "object_relationships": [["A", "is on", "B"], ["B", "is under", "table"], ["C", "is next to", "B"]]
 }
 ```
 
@@ -47,21 +48,18 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 
 **Input Scene Description**:
 - A is on B.
-- B is on the table.
-- C is also on the table.
+- B is under the table.
 - C is next to B.
 
 **Chain of Thought Reasoning**:
 1. Identify Objects: The scene includes "A", "B", "C", and the "table".
 2. Determine Object Positions:
    - A is on B.
-   - B is on the table.
-   - C is on the table.
+   - B is under the table.
    - C is next to B.
 3. Establish Relationships:
    - `<A, is on, B>`
-   - `<B, is on, Table>`
-   - `<C, is on, Table>`
+   - `<B, is under, Table>`
    - `<C, is next to, B>`
                      
 
@@ -69,7 +67,7 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 ```json
 {
   "objects": ["table", "A", "B", "C"],
-  "object_relationships": [["A", "is on", "B"], ["B", "is on", "table"], ["C", "is on", "table"], ["C", "is next to", "B"]]
+  "object_relationships": [["A", "is on", "B"], ["B", "is under", "table"], ["C", "is next to", "B"]]
 }
 ```
 
@@ -79,6 +77,7 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 - Follow the reasoning steps explicitly before outputting to ensure correctness and completeness.
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
+- Do not reffer to plural instances of objects, instead for multiple instances of an object give numbers to each object
 """)
     user_prompt = f"Give me the state in the given image"
     return system_prompt, user_prompt
