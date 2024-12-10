@@ -78,9 +78,8 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
 - Do not reffer to plural instances of objects, instead for multiple instances of an object give numbers to each object
-- An object cannot be on multiple objects at once
 """)
-    user_prompt = f"Give me the state in the given rgb and depth images"
+    user_prompt = f"Give me the state in the given image"
     return system_prompt, user_prompt
 
 #helper function that formats the image for GPT api
@@ -98,11 +97,9 @@ def encode_image(img_array):
     return encoded_string
 
 #api calling function
-def get_state(client, rgb_image, depth_image):
-    rgb_image = encode_image(rgb_image)
+def get_state(client, rgb_image):
+    image = encode_image(rgb_image)
     img_type = "image/jpeg"
-    depth_image = encode_image(depth_image)
-
 
     state_querry_system_prompt, state_querry_user_prompt = get_state_querry_prompt()
 
@@ -118,9 +115,7 @@ def get_state(client, rgb_image, depth_image):
                 "role": "user",
                 "content": [
                     {"type": "text", "text": state_querry_user_prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:{img_type};base64,{encode_image(rgb_image)}"}},
-                    {"type": "image_url", "image_url": {"url": f"data:{img_type};base64,{encode_image(depth_image)}"}}
-
+                    {"type": "image_url", "image_url": {"url": f"data:{img_type};base64,{encode_image(rgb_image)}"}}
                 ]
             },
         ],
@@ -144,28 +139,24 @@ if __name__ == "__main__":
     import numpy as np
     import cv2
     import os
+    import pickle
 
-    sample = "img_0847"
-    parent_path = f"./SUNRGBD/kv1/b3dodata/{sample}/"
 
-    rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
-    depth_path = os.path.join(parent_path, f"depth/{sample}_abs.png")
-
-    rgb_image = cv2.imread(rgb_path)
-    depth_image = cv2.imread(depth_path)
+    with open("./custom_dataset/one on two/top_view.pkl", "rb") as file:
+        rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
 
     
 
     client = OpenAI(
         api_key= API_KEY,
     )
-    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_image, depth_image)
+    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_img)
     print_json(state_json)
     
         
     fig, axes = plt.subplots(ncols=2)
-    axes[0].imshow(rgb_image)
-    axes[1].imshow(depth_image)
+    axes[0].imshow(rgb_img)
+    axes[1].imshow(depth_img)
 
     plt.show()
 

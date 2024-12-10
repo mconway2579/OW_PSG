@@ -65,8 +65,17 @@ if __name__ == "__main__":
 
 
     
-    top_dir = f"./SUNRGBD/kv1/b3dodata/"
-    samples = [entry for entry in os.listdir(top_dir) if os.path.isdir(os.path.join(top_dir, entry))]
+    top_dir = f"./custom_dataset/"
+    def find_pkl_files(top_directory):
+        pkl_files = []
+        for root, _, files in os.walk(top_directory):
+            for file in files:
+                if file.endswith(".pkl"):
+                    # Get the absolute path
+                    absolute_path = os.path.abspath(os.path.join(root, file))
+                    pkl_files.append(absolute_path)
+        return pkl_files
+    samples = find_pkl_files(top_dir)
 
     owl = OWLv2()
     print(f"{owl=}")
@@ -81,35 +90,12 @@ if __name__ == "__main__":
     inp = "a"
     i = 0
     while inp != "q":
-        sample = "img_0821" if i == 0 else "img_0822"
-        parent_path = os.path.join(top_dir, sample)
+        sample = samples[i]
+        with open(sample, "rb") as file:
+            rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
+            K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
 
-        rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
-        depth_path = os.path.join(parent_path, f"depth/{sample}_abs.png")
-        rgb_image = cv2.imread(rgb_path)
-        depth_image = cv2.imread(depth_path)
-
-        intrinsics_path = os.path.join(parent_path, f"intrinsics.txt")
-
-        extrinsics_dir_path = os.path.join(parent_path, f"extrinsics/")
-        extrinsics_text_files = [f for f in os.listdir(extrinsics_dir_path) if f.endswith('.txt')]
-        extrinsics_file = os.path.join(extrinsics_dir_path, extrinsics_text_files[0])
-
-        ext_mat = np.genfromtxt(extrinsics_file, delimiter=" ")
-        print(f"ext_mat= \n{ext_mat}")
-
-        intrinsics = np.genfromtxt(intrinsics_path, delimiter=" ")
-
-        print(f"intrinsics=\n{intrinsics}")
-
-
-        K = intrinsic_obj(intrinsics, rgb_image.shape[1], rgb_image.shape[0])
-
-        pose = homog_coord_to_pose_vector(ext_mat)
-
-        depth_scale = 1
-
-        graph = get_graph(client, owl, sam, rgb_image, depth_image, pose, K, depth_scale)
+        graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
 
         gm.add_graph(graph)
         inp = input("press q to quit: ")

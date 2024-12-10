@@ -70,7 +70,7 @@ class OWLv2:
             #print(f"\n\n{scores=}")
             #print(f"\n\n{labels=}")
             #print(f"\n\n{boxes=}")
-        print(f"{querries}, {scores}")
+        #print(f"{querries}, {scores}")
         return scores, boxes
 
     def __str__(self):
@@ -199,7 +199,7 @@ def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K,
     G.graph["timestamp"] = time.time()
     G.graph["observation_pose"] = pose
     
-
+    print(f"{type(rgb_img)=}")
     _, state_json, _, _ = get_state(OAI_Client, rgb_img)
     print(state_json)
 
@@ -349,26 +349,10 @@ if __name__ == "__main__":
     import os
     import cv2
     
-    sample = "img_0847"
-    parent_path = f"./SUNRGBD/kv1/b3dodata/{sample}/"
+    with open("./custom_dataset/one on two/top_view.pkl", "rb") as file:
+        rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
 
-    rgb_path = os.path.join(parent_path, f"image/{sample}.jpg")
-    depth_path = os.path.join(parent_path, f"depth/{sample}_abs.png")
-    rgb_image = cv2.imread(rgb_path)
-    depth_image = cv2.imread(depth_path)
-
-    intrinsics_path = os.path.join(parent_path, f"intrinsics.txt")
-
-    extrinsics_dir_path = os.path.join(parent_path, f"extrinsics/")
-    extrinsics_text_files = [f for f in os.listdir(extrinsics_dir_path) if f.endswith('.txt')]
-    extrinsics_file = os.path.join(extrinsics_dir_path, extrinsics_text_files[0])
-
-    ext_mat = np.genfromtxt(extrinsics_file, delimiter=" ")
-
-    intrinsics = np.genfromtxt(intrinsics_path, delimiter=" ")
-
-
-    K = intrinsic_obj(intrinsics, rgb_image.shape[1], rgb_image.shape[0])
+    K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
 
     sam = SAM2()
     print(f"{sam=}")
@@ -380,15 +364,13 @@ if __name__ == "__main__":
         api_key= API_KEY,
     )
 
-    pose = homog_coord_to_pose_vector(ext_mat)
 
-    depth_scale = 1
     
 
     #obs = Node("fan", rgb_image, depth_image, owl, sam, K, depth_scale, pose)
     #obs.display()
 
-    graph = get_graph(client, owl, sam, rgb_image, depth_image, pose, K, depth_scale)
+    graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
     if True:
         for obj, node in graph.nodes(data=True):
             try:

@@ -7,6 +7,7 @@ from APIKeys import API_KEY
 from control_scripts import goto_vec, get_pictures, get_depth_frame_intrinsics
 from config import realSenseFPS, topview_vec
 import pickle
+import numpy as np
 
 
 
@@ -32,18 +33,25 @@ if __name__ == "__main__":
     gm = Graph_Manager()
     inp = "a"
     i = 0
-    #goto_vec(myrobot, topview_vec)
-    #while inp != "q":
-    rgb_img, depth_img = get_pictures(myrs)
-    pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
-    depth_scale, K = get_depth_frame_intrinsics(myrs)
-    file_name = input("Enter file name: ")
-    with open(f"./custon_dataset/{file_name}.pkl", "wb") as file:
-        pickle.dump((rgb_img, depth_img, pose, K, depth_scale), file)
-    #    graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
-    #    gm.add_graph(graph)
+    goto_vec(myrobot, topview_vec)
+    while inp != "q":
+        rgb_img, depth_img = get_pictures(myrs)
+        pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
+        depth_scale, K = get_depth_frame_intrinsics(myrs)
+        K = np.array([
+            K.fx, 0, K.ppx,
+            0, K.fy, K.ppy,
+            0, 0, 1
+        ])
+        K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
 
-    #    inp = input("press q to quit: ")
-    #    i+=1
+        #file_name = input("Enter file name: ")
+        #with open(f"./custom_dataset/one on two/{file_name}.pkl", "wb") as file:
+        #    pickle.dump((rgb_img, depth_img, pose, K, depth_scale), file)
+        graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
+        gm.add_graph(graph)
+
+        inp = input("press q to quit: ")
+        i+=1
     myrobot.stop()
     myrs.disconnect()
