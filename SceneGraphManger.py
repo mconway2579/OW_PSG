@@ -1,4 +1,5 @@
-from SceneGraphGeneration import get_points, get_graph, Node
+from SceneGraphGeneration import get_graph, Node, semantic_graph_from_json, point_clound_graph_from_json
+from helper_functions import get_points
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
@@ -8,6 +9,41 @@ import networkx as nx
 import pickle
 from config import N_graph_samples
 from gpt_states import get_state
+
+
+from sentence_transformers import SentenceTransformer, util
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def bert_similarity(str1, str2):
+    embeddings = model.encode([str1, str2])
+    return util.cos_sim(embeddings[0], embeddings[1]).item()
+
+def node_match_func(N1, N2, node_sim_thresh=0.8):
+    try:
+        N1 = N1.get("name")
+        N2 = N2.get("name")
+    except:
+        print(f"Try except triggered trying to get names {N1=}, {N2=}")
+    #print(f"{N1=}, {N2=}")
+    embeddings = model.encode([N1, N2])
+    score = util.cos_sim(embeddings[0], embeddings[1]).item()
+    #if N1 != N2 and score > 0.5:
+    #    print(f"{N1=}, {N2=}, {score=}")
+    return score > node_sim_thresh
+
+
+def edge_match_func(E1, E2, edge_sim_thresh=0.8):
+    E1 = E1.get("connection")
+    E2 = E2.get("connection")
+
+    embeddings = model.encode([E1, E2])
+    score = util.cos_sim(embeddings[0], embeddings[1]).item()
+    #if E1 != E2 and score > 0.5:
+    #    print(f"{E1=}, {E2=}, {score=}")
+    return score > edge_sim_thresh
+
+
 class Graph_Manager:
     def __init__(self):
         self.graph_history = []
@@ -22,13 +58,13 @@ class Graph_Manager:
         self.last_depth = None
         self.start()
 
-
     def update_display(self, rubbish):
         if len(self.graph_history) == 0:
             return
         if self.last_graphed is not None and len(self.graph_history) == self.last_graphed:
             return
-        
+        G = self.graph_history[-1]
+        """
         G = nx.DiGraph()#self.graph_history[-1]
         for g in self.graph_history:
             for node, attrs in g.nodes(data=True):
@@ -47,8 +83,7 @@ class Graph_Manager:
             G.graph["timestamp"] = g.graph["timestamp"]
             G.graph["rgb_img"] = g.graph["rgb_img"]
             G.graph["depth_img"] = g.graph["depth_img"]
-            
-
+        """
         points, colors = get_points(G)
 
         self.ax3d.clear()
@@ -76,55 +111,43 @@ class Graph_Manager:
 
         #plt.draw()
 
-    def add_graph(self, client, owl, sam, rgb_img, depth_img, pose, K, depth_scale):
-        print("begin add graph")
+    def add_graph(self, client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, user_prompt):
         states = []
         for i in range(N_graph_samples):
-            _, state_json, _, _ = get_state(client, rgb_img)
+            _, state_json, _, _ = get_state(client, rgb_img, user_prompt)
             print(state_json)
             print()
             states.append(state_json)
         graphs = []
         for state in states:
-            G = nx.DiGraph()
-            for obj_str in state['objects']:
-                G.add_node(obj_str)
-            for relation in state['object_relationships']:
-                G.add_edge(relation[0], relation[2], connection=relation[1])
-            graphs.append(G)
+            graphs.append(semantic_graph_from_json(state))
         
         distance_matrix = np.zeros((len(graphs), len(graphs)))
+        acc = 0
         for i, g1 in enumerate(graphs):
             for j, g2 in enumerate(graphs):
-                ged = nx.graph_edit_distance(g1, g2)
+                #N = input("enter key to match on: ")
+                #node_match_func(g1.nodes[N], g2.nodes[N])
+                ged = nx.graph_edit_distance(g1, g2, node_match=node_match_func, edge_match=edge_match_func)
+                #ged = np.inf
+                #for v in nx.optimize_graph_edit_distance(g1, g2):
+                #    if v < ged:
+                #        ged = v
                 distance_matrix[i,j] = ged
+                acc +=1
+                print(f"forming distance matrix {(i*len(graphs)) + j+1}/{len(graphs)**2}", end="\r")
+
         print(f"distance_matrix=\n{distance_matrix}")
         distance_sums = np.sum(distance_matrix, axis=1)
         print(f"distance_sums=\n{distance_sums}")
         closest_idx = np.argmin(distance_sums)
         closest_state = states[closest_idx]
 
-        G = nx.DiGraph()
-        G.graph["timestamp"] = time.time()
-        G.graph["observation_pose"] = pose
-        G.graph["rgb_img"] = rgb_img
-        G.graph["depth_img"] = depth_img
-
-        for object in closest_state["objects"]:
-            obj_node = Node(object, rgb_img, depth_img, owl, sam, K, depth_scale, pose)
-            G.add_node(object, data=obj_node)
-
-        for edge in closest_state["object_relationships"]:
-            G.add_edge(edge[0], edge[2], connection=edge[1])
+        print("forming pointcloud graph")
+        G = point_clound_graph_from_json(closest_state, rgb_img, depth_img, pose, owl, sam, K, depth_scale)
         
         self.graph_history.append(G)
         return G
-
-
-
-
-            
-
 
     def start(self):
         self.animation = FuncAnimation(self.fig, self.update_display, interval=1000, cache_frame_data=False)  # 1 Hz update
@@ -133,14 +156,9 @@ class Graph_Manager:
 if __name__ == "__main__":
     from APIKeys import API_KEY
     import os
-    import cv2
-    import random
     from SceneGraphGeneration import intrinsic_obj, OWLv2, SAM2
     from openai import OpenAI
-    from magpie_control.ur5 import homog_coord_to_pose_vector
 
-
-    
     top_dir = f"./custom_dataset/"
     def find_pkl_files(top_directory):
         pkl_files = []
@@ -170,8 +188,8 @@ if __name__ == "__main__":
         with open(sample, "rb") as file:
             rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
             K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
-
-        gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
+        
+        gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, "how are objects layed out on the table? I know some of the objects are blocks")
         inp = input("press q to quit: ")
         i+=1
 

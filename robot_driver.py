@@ -10,7 +10,6 @@ import pickle
 import numpy as np
 
 
-
 if __name__ == "__main__":
     owl = OWLv2()
     print(f"{owl=}")
@@ -54,7 +53,7 @@ if __name__ == "__main__":
         #file_name = input("Enter file name: ")
         #with open(f"./custom_dataset/one on two/{file_name}.pkl", "wb") as file:
         #    pickle.dump((rgb_img, depth_img, pose, K, depth_scale), file)
-        graph = gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
+        graph = gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, "how are objects layed out on the table? There are some blocks and toys on the table")
         #gm.add_graph()
 
         inp = input("press q to quit: ")

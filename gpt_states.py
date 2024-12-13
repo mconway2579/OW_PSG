@@ -12,13 +12,14 @@ You are a robots eyes. Your task is to analyze the scene, determine the objects 
 
 You should output a JSON object containing the following fields:
 
-- **objects**: A list of all objects visible in the scene.
+- **objects**: A list of strings where the string describes the object visible in the scene descriptions should be percise nouns.
   
 - **object_relationships**: A list of tuples describing relationships between the objects. Each tuple should be in the format `<OBJECT1, RELATIONSHIP, OBJECT2>`, where `OBJECT1` is related to `OBJECT2`. 
 
 # Chain of Thought Reasoning
 
 1. **Identify Objects**: Begin by analyzing the scene to identify all visible objects.
+    - List each object and the number of instances of that object.
   
 2. **Determine Object Positions**: For each object, determine its placement in relation to other objects:
    - Is the object on another object?
@@ -47,11 +48,9 @@ Your output should be formatted as a JSON object, like the example below:
 - Follow the reasoning steps explicitly before outputting to ensure correctness and completeness.
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
-- Do not reffer to plural instances of objects, instead for multiple instances of an object give numbers to each object
 - Use as specific Nouns as you can to label objects
 """)
-    user_prompt = f"Give me the state in the given image"
-    return system_prompt, user_prompt
+    return system_prompt
 
 #helper function that formats the image for GPT api
 def encode_image(img_array):
@@ -68,11 +67,11 @@ def encode_image(img_array):
     return encoded_string
 
 #api calling function
-def get_state(client, rgb_image):
+def get_state(client, rgb_image, user_prompt):
     image = encode_image(rgb_image)
     img_type = "image/jpeg"
 
-    state_querry_system_prompt, state_querry_user_prompt = get_state_querry_prompt()
+    state_querry_system_prompt = get_state_querry_prompt()
 
     #print(f"{state_querry_system_prompt=}")
     #print()
@@ -85,7 +84,7 @@ def get_state(client, rgb_image):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": state_querry_user_prompt},
+                    {"type": "text", "text": user_prompt},
                     {"type": "image_url", "image_url": {"url": f"data:{img_type};base64,{encode_image(rgb_image)}"}}
                 ]
             },
@@ -94,7 +93,7 @@ def get_state(client, rgb_image):
         temperature=gpt_temp
     )
     state_json = json.loads(state_response.choices[0].message.content)
-    return state_response, state_json, state_querry_system_prompt, state_querry_user_prompt
+    return state_response, state_json, state_querry_system_prompt, user_prompt
 
     
 def print_json(j, name=""):
@@ -116,12 +115,10 @@ if __name__ == "__main__":
     with open("./custom_dataset/one on two/top_view.pkl", "rb") as file:
         rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
 
-    
-
     client = OpenAI(
         api_key= API_KEY,
     )
-    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_img)
+    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_img, "how are objects layed out on the table?")
     print_json(state_json)
     
         
