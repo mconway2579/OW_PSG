@@ -198,6 +198,8 @@ def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K,
 
     G.graph["timestamp"] = time.time()
     G.graph["observation_pose"] = pose
+    G.graph["rgb_img"] = rgb_img
+    G.graph["depth_img"] = depth_img
     
     print(f"{type(rgb_img)=}")
     _, state_json, _, _ = get_state(OAI_Client, rgb_img)

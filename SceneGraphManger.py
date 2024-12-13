@@ -13,8 +13,10 @@ class Graph_Manager:
         self.last_graphed = None
 
         self.fig = plt.figure(figsize = (12,12))
-        self.ax2d = self.fig.add_subplot(211)
-        self.ax3d = self.fig.add_subplot(212, projection='3d')
+        self.ax2d_rgb = self.fig.add_subplot(221)
+        self.ax2d_depth = self.fig.add_subplot(222)
+        self.ax2d_graph = self.fig.add_subplot(223)
+        self.ax3d = self.fig.add_subplot(224, projection='3d')
         self.start()
 
 
@@ -31,14 +33,20 @@ class Graph_Manager:
         self.ax3d.clear()
         self.ax3d.scatter(points[:,0], points[:,1], points[:,2], c=colors, s=0.5)
 
-        self.ax2d.clear()
+        self.ax2d_rgb.clear()
+        self.ax2d_rgb.imshow(G.graph['rgb_img'])
+        
+        self.ax2d_depth.clear()
+        self.ax2d_depth.imshow(G.graph['depth_img'])
+
+        self.ax2d_graph.clear()
 
         pos = nx.spring_layout(G)
         # Draw the graph on the specified axes
-        nx.draw(G, pos=pos, ax=self.ax2d, with_labels=True, node_color='lightblue', node_size=1500, font_size=15)
+        nx.draw(G, pos=pos, ax=self.ax2d_graph, with_labels=True, node_color='lightblue', node_size=1500, font_size=15)
         # Draw edge labels on the same axes
         edge_labels = nx.get_edge_attributes(G, 'connection')
-        nx.draw_networkx_edge_labels(G, pos=pos, edge_labels=edge_labels, font_size=12, ax=self.ax2d)
+        nx.draw_networkx_edge_labels(G, pos=pos, edge_labels=edge_labels, font_size=12, ax=self.ax2d_graph)
         # Show without blocking, then pause
         plt.tight_layout()
 

@@ -5,7 +5,7 @@ from magpie_control import realsense_wrapper as real
 from openai import OpenAI
 from APIKeys import API_KEY
 from control_scripts import goto_vec, get_pictures, get_depth_frame_intrinsics
-from config import realSenseFPS, topview_vec
+from config import realSenseFPS, topview_vec, sideview_vec
 import pickle
 import numpy as np
 
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     gm = Graph_Manager()
     inp = "a"
     i = 0
-    goto_vec(myrobot, topview_vec)
+    goto_vec(myrobot, sideview_vec)
     while inp != "q":
         rgb_img, depth_img = get_pictures(myrs)
         pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
