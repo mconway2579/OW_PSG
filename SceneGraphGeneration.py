@@ -100,6 +100,9 @@ class SAM2:
 
 class Node:
     def __init__(self, str_label, rgb_img, depth_img, vit, sam, K, depth_scale, observation_pose):
+
+        self.voxel_size = 0.005  # adjust based on your data
+
         self.str_label = str_label
 
         self.pix_xmin = None
@@ -159,8 +162,7 @@ class Node:
      
         #self.pcd, _ = self.pcd.remove_statistical_outlier(nb_neighbors=1000, std_ratio=1.0)
         #pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=100, std_ratio=0.1)
-        voxel_size = 0.005  # adjust based on your data
-        pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+        pcd = pcd.voxel_down_sample(voxel_size=self.voxel_size)
         #self.pcd_bbox = self.pcd.get_axis_aligned_bounding_box()
         #self.pcd_bbox = pcd.get_minimal_oriented_bounding_box()
         #self.pcd_bbox.color = (1,0,0)
@@ -192,6 +194,19 @@ class Node:
         plt.show(block = blocking)
         if not blocking:
             plt.pause(1)
+    def __add__(self, other):
+        assert isinstance(other, Node), "Can only add Node instances"
+        self.points = np.concatenate((self.points, other.points), axis=0)
+        self.colors = np.concatenate((self.colors, other.colors), axis=0)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(self.points)
+        pcd.colors = o3d.utility.Vector3dVector(self.colors)
+        pcd, _ = pcd.remove_radius_outlier(nb_points=16, radius=0.05)
+        pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=0.5)
+        pcd = pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        self.points = np.asarray(pcd.points)
+        self.colors = np.asarray(pcd.colors)
+        return self
  
 def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K, depth_scale):
     G = nx.DiGraph()
@@ -365,13 +380,7 @@ if __name__ == "__main__":
     client = OpenAI(
         api_key= API_KEY,
     )
-
-
     
-
-    #obs = Node("fan", rgb_image, depth_image, owl, sam, K, depth_scale, pose)
-    #obs.display()
-
     graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
     if True:
         for obj, node in graph.nodes(data=True):

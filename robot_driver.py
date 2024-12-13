@@ -5,7 +5,7 @@ from magpie_control import realsense_wrapper as real
 from openai import OpenAI
 from APIKeys import API_KEY
 from control_scripts import goto_vec, get_pictures, get_depth_frame_intrinsics
-from config import realSenseFPS, topview_vec, sideview_vec
+from config import realSenseFPS, topview_vec, sideview_vec, righview_vec
 import pickle
 import numpy as np
 
@@ -33,8 +33,14 @@ if __name__ == "__main__":
     gm = Graph_Manager()
     inp = "a"
     i = 0
-    goto_vec(myrobot, sideview_vec)
     while inp != "q":
+        goto_vec(myrobot, topview_vec)
+        if i % 3 == 0:
+            goto_vec(myrobot, sideview_vec)
+        elif i % 3 == 1:
+            goto_vec(myrobot, topview_vec)
+        elif i % 3 == 2:
+            goto_vec(myrobot, righview_vec)
         rgb_img, depth_img = get_pictures(myrs)
         pose = homog_coord_to_pose_vector(myrobot.get_cam_pose())
         depth_scale, K = get_depth_frame_intrinsics(myrs)
@@ -48,8 +54,8 @@ if __name__ == "__main__":
         #file_name = input("Enter file name: ")
         #with open(f"./custom_dataset/one on two/{file_name}.pkl", "wb") as file:
         #    pickle.dump((rgb_img, depth_img, pose, K, depth_scale), file)
-        graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
-        gm.add_graph(graph)
+        graph = gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale)
+        #gm.add_graph()
 
         inp = input("press q to quit: ")
         i+=1

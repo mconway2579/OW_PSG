@@ -40,36 +40,6 @@ Your output should be formatted as a JSON object, like the example below:
   "objects": ["table", "A", "B", "C"],
   "object_relationships": [["A", "is on", "B"], ["B", "is under", "table"], ["C", "is next to", "B"]]
 }
-```
-
-Make sure the output JSON adheres strictly to the specified structure and validates that each object is accounted for in the relationships.
-
-# Examples
-
-**Input Scene Description**:
-- A is on B.
-- B is under the table.
-- C is next to B.
-
-**Chain of Thought Reasoning**:
-1. Identify Objects: The scene includes "A", "B", "C", and the "table".
-2. Determine Object Positions:
-   - A is on B.
-   - B is under the table.
-   - C is next to B.
-3. Establish Relationships:
-   - `<A, is on, B>`
-   - `<B, is under, Table>`
-   - `<C, is next to, B>`
-                     
-
-**Output JSON**:
-```json
-{
-  "objects": ["table", "A", "B", "C"],
-  "object_relationships": [["A", "is on", "B"], ["B", "is under", "table"], ["C", "is next to", "B"]]
-}
-```
 
 # Notes
 
@@ -78,6 +48,7 @@ Make sure the output JSON adheres strictly to the specified structure and valida
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
 - Do not reffer to plural instances of objects, instead for multiple instances of an object give numbers to each object
+- Use as specific Nouns as you can to label objects
 """)
     user_prompt = f"Give me the state in the given image"
     return system_prompt, user_prompt
