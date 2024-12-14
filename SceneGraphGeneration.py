@@ -35,7 +35,7 @@ class OWLv2:
         self.model.to(torch.device("cuda")) if torch.cuda.is_available() else None
         self.model.to(torch.device("mps")) if torch.backends.mps.is_available() else None
         self.model.eval()  # set model to evaluation mode
-    def predict(self, img, querries, k = 1):
+    def predict(self, img, querries):
         inputs = self.processor(text=querries, images=img, return_tensors="pt")
         inputs.to(torch.device("cuda")) if torch.cuda.is_available() else None
         inputs.to(torch.device("mps")) if torch.backends.mps.is_available() else None
@@ -109,13 +109,13 @@ class Node:
 
         self.points = points
         self.colors = colors
-        #self.clean_pointcloud()
+        self.clean_pointcloud()
 
     def clean_pointcloud(self):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(self.points)
         pcd.colors = o3d.utility.Vector3dVector(self.colors)
-        pcd, _ = pcd.remove_radius_outlier(nb_points=16, radius=0.05)
+        #pcd, _ = pcd.remove_radius_outlier(nb_points=16, radius=0.05)
         pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=0.5)
         pcd = pcd.voxel_down_sample(voxel_size=self.voxel_size)
         self.points = np.asarray(pcd.points)
@@ -142,7 +142,13 @@ class Node:
 
 def semantic_graph_from_json(state_json, display = False):
     G = nx.DiGraph()
-    for obj_str in state_json['objects']:
+    nodes = state_json["objects"]
+    for edge in state_json["object_relationships"]:
+        if edge[0] not in nodes:
+            nodes.append(edge[0])
+        if edge[2] not in nodes:
+            nodes.append(edge[2])
+    for obj_str in nodes:
         G.add_node(obj_str, name=obj_str)
     for relation in state_json['object_relationships']:
         G.add_edge(relation[0], relation[2], connection=relation[1])
@@ -166,7 +172,14 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
     G.graph["observation_pose"] = pose
     G.graph["rgb_img"] = rgb_img
     G.graph["depth_img"] = depth_img
-    labels_bboxes_list = label_vit.predict(rgb_img, state_json["objects"])
+
+    nodes = state_json["objects"]
+    for edge in state_json["object_relationships"]:
+        if edge[0] not in nodes:
+            nodes.append(edge[0])
+        if edge[2] not in nodes:
+            nodes.append(edge[2])
+    labels_bboxes_list = label_vit.predict(rgb_img, nodes)
     bboxes = [bbox for _, bbox in labels_bboxes_list]
     labels = [label for label, _ in labels_bboxes_list]
     if display:
@@ -206,6 +219,7 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
 
         obj_node = Node(label, points, colors)
         G.add_node(label, data=obj_node, name=label)
+        print(f"added_node {label=} {obj_node=}")
 
     for edge in state_json["object_relationships"]:
         G.add_edge(edge[0], edge[2], connection=edge[1])
@@ -242,8 +256,7 @@ if __name__ == "__main__":
     graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, prompt)
     if False:
         for obj, node in graph.nodes(data=True):
-            try:
-                node["data"].display()
-            except KeyError:
-                print(f"Key error retriving data from {obj}, {node}")
+            node["data"].display()
+    
+            
     display_graph(graph, blocking = True)

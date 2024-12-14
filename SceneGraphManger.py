@@ -15,23 +15,16 @@ from sentence_transformers import SentenceTransformer, util
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def bert_similarity(str1, str2):
-    embeddings = model.encode([str1, str2])
-    return util.cos_sim(embeddings[0], embeddings[1]).item()
-
 def node_match_func(N1, N2, node_sim_thresh=0.8):
-    try:
-        N1 = N1.get("name")
-        N2 = N2.get("name")
-    except:
-        print(f"Try except triggered trying to get names {N1=}, {N2=}")
+    N1 = N1.get("name")
+    N2 = N2.get("name")
+    assert N1 is not None and N2 is not None, f"Something is None {N1=}, {N2=}"
     #print(f"{N1=}, {N2=}")
     embeddings = model.encode([N1, N2])
     score = util.cos_sim(embeddings[0], embeddings[1]).item()
     #if N1 != N2 and score > 0.5:
     #    print(f"{N1=}, {N2=}, {score=}")
     return score > node_sim_thresh
-
 
 def edge_match_func(E1, E2, edge_sim_thresh=0.8):
     E1 = E1.get("connection")
@@ -43,6 +36,61 @@ def edge_match_func(E1, E2, edge_sim_thresh=0.8):
     #    print(f"{E1=}, {E2=}, {score=}")
     return score > edge_sim_thresh
 
+def combine_graphs(G1, G2):
+    print(f"begin combine graphs")
+    combined_graph = nx.DiGraph()
+    for node_g1, data_g1 in G1.nodes(data=True):
+        print(f"{data_g1=}")
+    for node_g2, data_g2 in G2.nodes(data=True):
+        print(f"{data_g2=}")
+    # Add nodes and merge custom node data
+    for node in set(G1.nodes).union(G2.nodes):
+        print(f"{node=}")
+        if node in G1.nodes and node in G2.nodes:
+            print(f"{G1.nodes[node]=}")
+            print(f"{G2.nodes[node]=}")
+            #print(f"  node in both G1 and G2")
+            merged_data = G1.nodes[node]["data"] + G2.nodes[node]["data"]
+        elif node in G1.nodes:
+            print(f"{G1.nodes[node]=}")
+            #print(f"  node only in G1")
+            merged_data = G1.nodes[node]["data"]
+        else:
+            print(f"{G2.nodes[node]=}")
+            #print(f"  node only in G2")
+            merged_data = G2.nodes[node]["data"]
+
+        combined_graph.add_node(node, data=merged_data)
+
+    # Add edges from both graphs
+    for edge in set(G1.edges).union(G2.edges):
+        u, v = edge
+        if G1.has_edge(u, v) and G2.has_edge(u, v):
+            merged_edge_data = G1[u][v]["connection"] + G2[u][v]["connection"]
+        elif G1.has_edge(u, v):
+            merged_edge_data = G1[u][v]["connection"]
+        else:
+            merged_edge_data = G2[u][v]["connection"]
+
+        combined_graph.add_edge(u, v, connection=merged_edge_data)
+
+    ts = None
+    rgb = None
+    depth = None
+    if G1.graph["timestamp"] > G2.graph["timestamp"]:
+        ts = G1.graph["timestamp"]
+        rgb = G1.graph["rgb_img"]
+        depth = G1.graph["depth_img"]
+    else:
+        ts = G2.graph["timestamp"]
+        rgb = G2.graph["rgb_img"]
+        depth = G2.graph["depth_img"]
+
+    combined_graph.graph["timestamp"] = ts
+    combined_graph.graph["rgb_img"] = rgb
+    combined_graph.graph["depth_img"] = depth
+
+    return combined_graph
 
 class Graph_Manager:
     def __init__(self):
@@ -54,39 +102,31 @@ class Graph_Manager:
         self.ax2d_depth = self.fig.add_subplot(222)
         self.ax2d_graph = self.fig.add_subplot(223)
         self.ax3d = self.fig.add_subplot(224, projection='3d')
+        
         self.last_rgb = None
         self.last_depth = None
         self.start()
 
+    def process_graph_history(self):
+        G = self.graph_history[0]
+        for g in self.graph_history[1:]:
+            G = combine_graphs(G, g)
+        return G
+        
     def update_display(self, rubbish):
         if len(self.graph_history) == 0:
             return
         if self.last_graphed is not None and len(self.graph_history) == self.last_graphed:
             return
-        G = self.graph_history[-1]
-        """
-        G = nx.DiGraph()#self.graph_history[-1]
-        for g in self.graph_history:
-            for node, attrs in g.nodes(data=True):
-                #print(f"{node=}, {attrs=}")
-                if node in G:
-                    G.nodes[node]["data"] = G.nodes[node]["data"] + attrs["data"]
-                else:
-                    G.add_node(node, data=attrs['data'])
-
-            for u, v, attrs in g.edges(data=True):
-                #print(f"{u=}, {v=}, {attrs=}")
-                if (u,v) in G.edges:
-                    G.edges[u,v]["connection"] = G.edges[u,v]["connection"] + ", "+ attrs["connection"]
-                else:
-                    G.add_edge(u, v, connection=attrs['connection'])
-            G.graph["timestamp"] = g.graph["timestamp"]
-            G.graph["rgb_img"] = g.graph["rgb_img"]
-            G.graph["depth_img"] = g.graph["depth_img"]
-        """
+        #G = self.graph_history[-1]
+        G = self.process_graph_history()
+        
         points, colors = get_points(G)
 
         self.ax3d.clear()
+        self.ax3d.set_xlim(-0.5, 0)
+        self.ax3d.set_ylim(-1, 0)
+        self.ax3d.set_zlim(0, 0.2)
         self.ax3d.scatter(points[:,0], points[:,1], points[:,2], c=colors, s=0.5)
 
         self.ax2d_rgb.clear()
@@ -115,8 +155,7 @@ class Graph_Manager:
         states = []
         for i in range(N_graph_samples):
             _, state_json, _, _ = get_state(client, rgb_img, user_prompt)
-            print(state_json)
-            print()
+            
             states.append(state_json)
         graphs = []
         for state in states:
@@ -126,6 +165,8 @@ class Graph_Manager:
         acc = 0
         for i, g1 in enumerate(graphs):
             for j, g2 in enumerate(graphs):
+                if g1 == g2:
+                    continue
                 #N = input("enter key to match on: ")
                 #node_match_func(g1.nodes[N], g2.nodes[N])
                 ged = nx.graph_edit_distance(g1, g2, node_match=node_match_func, edge_match=edge_match_func)
@@ -143,11 +184,14 @@ class Graph_Manager:
         closest_idx = np.argmin(distance_sums)
         closest_state = states[closest_idx]
 
-        print("forming pointcloud graph")
-        G = point_clound_graph_from_json(closest_state, rgb_img, depth_img, pose, owl, sam, K, depth_scale)
+        print(f"graph({len(self.graph_history)})={closest_state}")
+        print()
         
-        self.graph_history.append(G)
-        return G
+        print("forming pointcloud graph")
+        PC_G = point_clound_graph_from_json(closest_state, rgb_img, depth_img, pose, owl, sam, K, depth_scale)
+        
+        self.graph_history.append(PC_G)
+        return PC_G
 
     def start(self):
         self.animation = FuncAnimation(self.fig, self.update_display, interval=1000, cache_frame_data=False)  # 1 Hz update
@@ -159,7 +203,7 @@ if __name__ == "__main__":
     from SceneGraphGeneration import intrinsic_obj, OWLv2, SAM2
     from openai import OpenAI
 
-    top_dir = f"./custom_dataset/"
+    top_dir = f"./custom_dataset/one on two/"
     def find_pkl_files(top_directory):
         pkl_files = []
         for root, _, files in os.walk(top_directory):
@@ -182,16 +226,16 @@ if __name__ == "__main__":
 
     gm = Graph_Manager()
     inp = "a"
-    i = 0
-    while inp != "q":
+    for i in range(len(samples)):
         sample = samples[i]
         with open(sample, "rb") as file:
             rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
             K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
         
         gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, "how are objects layed out on the table? I know some of the objects are blocks")
-        inp = input("press q to quit: ")
-        i+=1
+        input("press enter to continue")
+    input("press enter to quit")
+
 
     
     

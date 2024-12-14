@@ -88,11 +88,9 @@ def get_points(G):
     colors = []
 
     for obj, node in G.nodes(data=True):
-        try:
-            points.append(node["data"].points)
-            colors.append(node["data"].colors)
-        except KeyError:
-            print(f"Key error retriving data from {obj}, {node}")
+        points.append(node["data"].points)
+        colors.append(node["data"].colors)
+        
         
     
     points = np.concatenate(points, axis=0)
