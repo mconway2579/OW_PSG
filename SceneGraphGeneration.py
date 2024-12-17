@@ -13,7 +13,7 @@ from transformers import OwlViTProcessor, OwlViTForObjectDetection
 from config import vit_model_name, voxel_size
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-
+#Class to mirror the realsense intrinsic object
 class intrinsic_obj:
     def __init__(self, array, width, height):
         if array.shape == (3,3):
@@ -26,7 +26,7 @@ class intrinsic_obj:
         self.ppy = array[5]
         self.width = width
         self.height = height
-
+#Class to use OWLv2
 class OWLv2:
     def __init__(self):
         self.processor = OwlViTProcessor.from_pretrained(vit_model_name)
@@ -36,6 +36,15 @@ class OWLv2:
         self.model.to(torch.device("mps")) if torch.backends.mps.is_available() else None
         self.model.eval()  # set model to evaluation mode
     def predict(self, img, querries):
+        """
+        Gets realsense frames
+        Parameters:
+        - img: image to produce bounding boxes in
+        - querries: list of strings whos bounding boxes we want
+
+        Returns:
+        - highest_score_boxes: list of bounding boxes associated with querries
+        """
         inputs = self.processor(text=querries, images=img, return_tensors="pt")
         inputs.to(torch.device("cuda")) if torch.cuda.is_available() else None
         inputs.to(torch.device("mps")) if torch.backends.mps.is_available() else None
@@ -73,10 +82,22 @@ class OWLv2:
     def __repr__(self):
         return self.__str__()
 
+#Class to use sam2
 class SAM2:
     def __init__(self):
         self.sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
     def predict(self, img, bbox):
+        """
+        Gets realsense frames
+        Parameters:
+        - img: image to produce masks in in
+        - bbox: list of bounding boxes whos masks we want
+
+        Returns:
+        - sam_mask: masks produced by sam for every bounding box
+        - sam_scores: scores produced by sam for every mask
+        - sam_logits: logits produced by sam for every mask
+        """
         # Suppress warnings during the prediction step
         self.sam_predictor.set_image(img)
 
@@ -101,16 +122,26 @@ class SAM2:
     def __repr__(self):
         return self.__str__()
 
-class Node:
+
+#PointCloud class stored as data attribute in an nx graph
+class PointCloud:
     def __init__(self, str_label, points, colors):
-
+        """
+        A Point Cloud has a string label
+        points in 3d space in the world frame
+        colors for each point
+        """
         self.str_label = str_label
-
         self.points = points
         self.colors = colors
         self.clean_pointcloud()
 
     def clean_pointcloud(self):
+        """
+        casts nodes points and colors into an o3d point could,
+        downsamples with voxel size from config
+        removes statistical outliers
+        """
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(self.points)
         pcd.colors = o3d.utility.Vector3dVector(self.colors)
@@ -133,13 +164,21 @@ class Node:
             plt.pause(1)
 
     def __add__(self, other):
-        assert isinstance(other, Node), "Can only add Node instances"
+        assert isinstance(other, PointCloud), "Can only add point cloud instances"
         points = np.concatenate((self.points, other.points), axis=0)
         colors = np.concatenate((self.colors, other.colors), axis=0)
         #self.clean_pointcloud()
-        return Node(self.str_label, points, colors)
+        return PointCloud(self.str_label, points, colors)
 
 def semantic_graph_from_json(state_json, display = False):
+    """
+    Given a json like 
+    {
+        objects:[A,B,C]
+        object relationships: [(A, is on, B), (C, is on, A)]
+    }
+    Create an nx graph where nodes have string names and edges have string names
+    """
     G = nx.DiGraph()
     nodes = state_json["objects"]
     for edge in state_json["object_relationships"]:
@@ -171,35 +210,49 @@ def semantic_graph_from_json(state_json, display = False):
     return G
 
 def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display = False):
+    """
+    Given a json like 
+    {
+        objects:[A,B,C]
+        object relationships: [(A, is on, B), (C, is on, A)]
+    }
+    Create an nx graph where nodes have attached point cloud objects
+    """
     G = nx.DiGraph()
     G.graph["timestamp"] = time.time()
     G.graph["observation_pose"] = pose
     G.graph["rgb_img"] = rgb_img
     G.graph["depth_img"] = depth_img
 
+    #verify no objects are in object relatonships but not in objects
     nodes = state_json["objects"]
     for edge in state_json["object_relationships"]:
         if edge[0] not in nodes:
             nodes.append(edge[0])
         if edge[2] not in nodes:
             nodes.append(edge[2])
-    labels_bboxes_list = label_vit.predict(rgb_img, nodes)
-    bboxes = [bbox for _, bbox in labels_bboxes_list]
-    labels = [label for label, _ in labels_bboxes_list]
 
-    #labels = []
-    #bboxes = []
-    #for node in nodes:
-    #    labels_bboxxes_list = label_vit.predict(rgb_img, [node])
-    #    labels.append(node)
-    #    bboxes.append(labels_bboxxes_list[0][1])
+    #get bounding boxes for each node
+    oneshot = True
+    labels = []
+    bboxes = []
+    if oneshot:
+        labels_bboxes_list = label_vit.predict(rgb_img, nodes)
+        bboxes = [bbox for _, bbox in labels_bboxes_list]
+        labels = [label for label, _ in labels_bboxes_list]
+    else:
+        for node in nodes:
+            labels_bboxxes_list = label_vit.predict(rgb_img, [node])
+            labels.append(node)
+            bboxes.append(labels_bboxxes_list[0][1])
     
     if display:
         draw_bounding_boxes(rgb_img, bboxes, labels)
-
+    #get masks for each object
     masks, scores, logits = sam_predictor.predict(rgb_img, bboxes)
 
     for label, mask in zip(labels, masks):
+        #create a point cloud for each mask label pair and store it as a node
         rgb_segment = rgb_img.copy()
         rgb_segment[~mask] = 0
         depth_segment = depth_img.copy()
@@ -219,7 +272,7 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
         points = np.asarray(pcd.points)
         colors = np.asarray(pcd.colors)
 
-        obj_node = Node(label, points, colors)
+        obj_node = PointCloud(label, points, colors)
         G.add_node(label, data=obj_node, name=label)
         #print(f"added_node {label=} {obj_node=}")
 
@@ -231,8 +284,10 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
     return G
 
 def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K, depth_scale, prompt):
+    #gets a state from openai
     _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose, display = False)
     print(state_json)
+    #converts state into pointcloud graph
     G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=True)
     return G
 

@@ -1,4 +1,4 @@
-from SceneGraphGeneration import get_graph, Node, semantic_graph_from_json, point_clound_graph_from_json
+from SceneGraphGeneration import get_graph, PointCloud, semantic_graph_from_json, point_clound_graph_from_json
 from helper_functions import get_points
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -13,6 +13,24 @@ from gpt_states import get_state
 from semantics import str_semantic_distance, node_replacement_cost, node_match_func, edge_replacement_cost, edge_match_func, find_semantic_matching
 
 def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
+    """
+    for a single rgb image and user_prompt
+    create n_state_samples jsons like 
+        {
+            objects:[A,B,C]
+            object relationships: [(A, is on, B), (C, is on, A)]
+        }
+    from each of those state samples create a graph
+    then find the graph edit distance for each graph to each other graph filling in a distance matrix
+
+    graph edit distance has the cosin distance for text embeddings as the replacement cost
+    graph edit distance has one for the cost of adding or rremoving a node or edge
+    it is always cheaper to substitute nodes that have some kindof similarity
+
+    return the state that has the minimum row sum across the distance matrix
+    """
+
+
     states = []
     for i in range(n_state_samples):
         _, state_json, _, _ = get_state(client, rgb_img, user_prompt, pose=pose, display = False)
@@ -24,10 +42,10 @@ def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
 
     distance_matrix = np.zeros((len(graphs), len(graphs)))
     acc = 0
-    for i, g1 in enumerate(graphs):
-        for j, g2 in enumerate(graphs):
-            if g1 == g2:
-                continue
+    for i in range(0, len(graphs)):
+        g1 = graphs[i]
+        for j in range(i+1, len(graphs)):
+            g2 = graphs[j]
             sub_add_cost = lambda a=None,b=None: 1 #return the cos distance if nodes were not similar at all
             ged = nx.graph_edit_distance(g1, g2, node_match=node_match_func, edge_match=edge_match_func,
                                          node_subst_cost=node_replacement_cost, edge_subst_cost=edge_replacement_cost,
@@ -38,6 +56,8 @@ def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
             acc +=1
             print(f"forming distance matrix {(i*len(graphs)) + j+1}/{len(graphs)**2}", end="\r") if display else None
 
+    distance_matrix += distance_matrix.T
+
     print(f"distance_matrix=\n{distance_matrix}") if display else None
     distance_sums = np.sum(distance_matrix, axis=1)
     print(f"distance_sums=\n{distance_sums}") if display else None
@@ -45,11 +65,23 @@ def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
     closest_state = states[closest_idx]
     return closest_state
 
-def combine_nodes(G_out, G1, G2, g1_2_g2 = None, g2_to_g1 = None):
+def combine_nodes(G_out, G1, G2, g1_2_g2 = None, g2_2_g1 = None):
+    """
+    Combines nodes from G1 and G2 into G_out
+    g1_2_g2: dict that matches a node str in g1 to a node str in g2
+    g2_2_g1: inverse of g1_2_g2
+
+    handles three cases
+    1. a node exists in both g1 and g2 (has a matching in the two dictionaries)
+    2. a node exists only in g1 but not in g2
+    3. a node exists only in g2 but not in g1
+    each case only adds a single node to G_out
+    """
+
     print(f"\n\nBegin Combine Nodes")
     
-    if g1_2_g2 is None or g2_to_g1 is None:
-        g1_2_g2, g2_to_g1 = find_semantic_matching(list(G1.nodes), list(G2.nodes), node_match_thresh)
+    if g1_2_g2 is None or g2_2_g1 is None:
+        g1_2_g2, g2_2_g1 = find_semantic_matching(list(G1.nodes), list(G2.nodes), node_match_thresh)
 
     G1_placed_nodes = []
     G2_placed_nodes = []
@@ -84,6 +116,20 @@ def combine_nodes(G_out, G1, G2, g1_2_g2 = None, g2_to_g1 = None):
     return G_out
 
 def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
+    """
+    Combines edges from G1 and G2 into G_out
+    g1_2_g2: dict that matches a node str in g1 to a node str in g2
+    g2_2_g1: inverse of g1_2_g2
+
+    handles three cases
+    1. a node exists in both g1 and g2, and the edge exists in both g1 and g2
+    2. a node exists in both g1 and g2, but the edge only exists in g1
+    3. a node exists in both g1 and g2, but the edge only exists in g2
+    4. A node only exists in g1
+    5. A node only exists in g2
+
+    each case only adds a single edge to G_out
+    """
     print(f"\n\nBegin Combine Edges")
     if g1_to_g2 is None or g2_to_g1 is None:
         g1_to_g2, g2_to_g1 = find_semantic_matching(list(G1.nodes), list(G2.nodes), node_match_thresh)
@@ -92,6 +138,7 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
     G2_processed_nodes = []
 
     #add edges for nodes in both G1 and G2
+    #cases 1,2,3
     for Node1, Node2 in g1_to_g2.items():
         
         Node_1_edges = list(G1[Node1].items())
@@ -107,7 +154,8 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
         node2_placed_edges = []
         edgesNode1_2_edgesNode2, edgesNode2_2_edgesNode1= find_semantic_matching(Node_1_edges, Node_2_edges, edge_match_thresh)
         print(f"{edgesNode1_2_edgesNode2=}")
-        #add edges in both node1 and node2
+
+        #add edges in both node1 and node2, case1
         for e1, e2 in edgesNode1_2_edgesNode2.items():
             label, dest = e1.split("-")
             source = Node1
@@ -118,7 +166,7 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
 
             print(f"{Node1}({e1}) <-> {Node2}({e2})")
 
-        #add edges for node1 and node2 that are in only g1
+        #add edges for node1 and node2 that are in only g1, case 2
         for edge in Node_1_edges:
             if edge not in node1_placed_edges:
                 label, dest = edge.split("-")
@@ -127,7 +175,7 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
                 node1_placed_edges.append(edge)
                 print(f"{Node1} is a shared node but only has ({edge}) in G1")
 
-        #add edges for node1 and node2 that are in only g2
+        #add edges for node1 and node2 that are in only g2, case 3
         for edge in Node_2_edges:
             if edge not in node2_placed_edges:
                 label, dest = edge.split("-")
@@ -143,7 +191,7 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
         G1_processed_nodes.append(Node1)
         G2_processed_nodes.append(Node2)
 
-    #add edges for nodes in G1 but not G2
+    #add edges for nodes in G1 but not G2 case 4
     for Node1, attr in G1.nodes(data = True):
         if attr['name'] not in G1_processed_nodes:
             for neighbor in G1.neighbors(Node1):
@@ -153,7 +201,7 @@ def combine_edges(G_out, G1, G2, g1_to_g2 = None, g2_to_g1 = None):
             G1_processed_nodes.append(attr["name"])
 
 
-    #add edges for nodes in G2 but not G1
+    #add edges for nodes in G2 but not G1 case 5
     for Node2, attr in G2.nodes(data = True):
         if attr['name'] not in G2_processed_nodes:
             for neighbor in G2.neighbors(Node2):
@@ -196,6 +244,9 @@ def combine_graphs(G1, G2, display= True):
     return G
 
 class Graph_Manager:
+    """
+    Class to manage adding graphs, combinging graphs, holding a graph history, and updating the display
+    """
     def __init__(self):
         self.graph_history = []
         self.last_graphed_i = 0
@@ -261,6 +312,7 @@ if __name__ == "__main__":
     import os
     from SceneGraphGeneration import intrinsic_obj, OWLv2, SAM2
     from openai import OpenAI
+    
 
     top_dir = f"./custom_dataset/one on two/"
     def find_pkl_files(top_directory):
