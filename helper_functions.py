@@ -106,6 +106,9 @@ def display_graph(G, blocking = False):
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
+    ax.set_xlim(-0.5, 0)
+    ax.set_ylim(-1, 0)
+    ax.set_zlim(0, 0.2)
 
     pos = nx.spring_layout(G)
     # Draw the graph on the specified axes
