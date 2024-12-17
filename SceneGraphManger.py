@@ -33,7 +33,7 @@ def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
 
     states = []
     for i in range(n_state_samples):
-        _, state_json, _, _ = get_state(client, rgb_img, user_prompt, pose=pose, display = False)
+        _, state_json, _, _ = get_state(client, rgb_img, user_prompt, pose=pose)
         states.append(state_json)
         #print(f"{state_json}\n") if display else None
     graphs = []
@@ -344,5 +344,5 @@ if __name__ == "__main__":
             K = intrinsic_obj(K, rgb_img.shape[1], rgb_img.shape[0])
         
         gm.add_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, "how are objects layed out on the table? I know some of the objects are blocks", display=True)
-        input("press enter to continue")
+        #input("press enter to continue")
     input("press enter to quit:\n")

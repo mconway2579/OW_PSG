@@ -33,7 +33,7 @@ You should output a JSON object containing the following fields:
     - List each object and the number of instances of that object.
   
 2. **Determine Object Positions**: For each object, determine its placement in relation to other objects:
-   - Is the object spacially related to another object?
+   - Is the object spatially related to another object?
    - Capture as many relationships as you can
 
 3. **Establish Relationships**: Once object positions are determined, establish relationships following these rules:
@@ -57,7 +57,7 @@ Your output should be formatted as a JSON object, like the example below:
 - Follow the reasoning steps explicitly before outputting to ensure correctness and completeness.
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
-- Use as specific Nouns and advjectives to label objects
+- Use specific Nouns and advjectives to label objects
 - Include many relationships
 """)
     return system_prompt
@@ -106,7 +106,7 @@ def encode_image(img_array):
     return encoded_string
 
 #api calling function
-def get_state(client, rgb_image, user_prompt, pose=None, display=False):
+def get_state(client, rgb_image, user_prompt, pose=None):
 
     """
     Gets state json
@@ -121,24 +121,12 @@ def get_state(client, rgb_image, user_prompt, pose=None, display=False):
     - state_querry_system_prompt: str
     - user_prompt: str
     """
-
-    if display:
-        plt.figure()
-        plt.imshow(rgb_image)
-        plt.title("not rotated")
-        plt.show(block = False)
-        plt.pause(1)
     if pose is not None:
         yaw = pose[5]
         yaw = np.degrees(yaw)
         #print(f"{yaw=}")
         rgb_image = rotate_image(rgb_image.copy(), yaw)
-    if display:
-        plt.figure()
-        plt.imshow(rgb_image)
-        plt.title("rotated")
-        plt.show(block = False)
-        plt.pause(1)
+    
 
     encoded_img = encode_image(rgb_image)
     img_type = "image/jpeg"
@@ -177,14 +165,17 @@ if __name__ == "__main__":
     import pickle
 
 
-    with open("./custom_dataset/one on two/angled_view.pkl", "rb") as file:
+    with open("./custom_dataset/one on two/top_view.pkl", "rb") as file:
         rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
 
     client = OpenAI(
         api_key= API_KEY,
     )
-    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_img, "how are objects layed out on the table?", pose=pose, display=True)
+    state_response, state_json, state_querry_system_prompt, state_querry_user_prompt = get_state(client, rgb_img, "how are objects layed out on the table?", pose=pose)
     print_json(state_json)
-
+    plt.figure()
+    plt.imshow(rgb_img)
+    plt.show(block = False)
+    plt.pause(1)
     plt.show()
 

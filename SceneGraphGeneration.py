@@ -274,6 +274,29 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
 
         obj_node = PointCloud(label, points, colors)
         G.add_node(label, data=obj_node, name=label)
+
+        if display:
+            fig = plt.figure(figsize=(12, 12))
+            mask_ax = fig.add_subplot(2, 2, 1)
+            mask_ax.set_title("SAM2 Mask")
+
+            rgbSeg_ax = fig.add_subplot(2, 2, 2)
+            rgbSeg_ax.set_title("RGB segment")
+
+            depthSeg_ax = fig.add_subplot(2, 2, 3)
+            depthSeg_ax.set_title("Depth segment")
+
+            pc_ax = fig.add_subplot(2, 2, 4, projection='3d')  # 3D subplot
+            pc_ax.set_title("Point Cloud")
+
+
+            mask_ax.imshow(mask)
+            rgbSeg_ax.imshow(rgb_segment)
+            depthSeg_ax.imshow(depth_segment)
+            pc_ax.scatter(points[:,0], points[:,1], points[:,2], c=colors, s=1)
+            pc_ax.set_xlabel("X")
+            pc_ax.set_ylabel("Y")
+            pc_ax.set_zlabel("Z")
         #print(f"added_node {label=} {obj_node=}")
 
     for edge in state_json["object_relationships"]:
@@ -285,7 +308,7 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
 
 def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K, depth_scale, prompt):
     #gets a state from openai
-    _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose, display = False)
+    _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose)
     print(state_json)
     #converts state into pointcloud graph
     G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=True)
