@@ -10,7 +10,7 @@ from gpt_states import get_state
 import time
 import pickle
 from transformers import OwlViTProcessor, OwlViTForObjectDetection
-from config import vit_model_name, vit_thresh
+from config import vit_model_name, voxel_size
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
@@ -103,7 +103,6 @@ class SAM2:
 
 class Node:
     def __init__(self, str_label, points, colors):
-        self.voxel_size = 0.005  # adjust based on your data
 
         self.str_label = str_label
 
@@ -117,7 +116,7 @@ class Node:
         pcd.colors = o3d.utility.Vector3dVector(self.colors)
         #pcd, _ = pcd.remove_radius_outlier(nb_points=16, radius=0.05)
         pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=0.5)
-        pcd = pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
         self.points = np.asarray(pcd.points)
         self.colors = np.asarray(pcd.colors)
 
@@ -135,10 +134,10 @@ class Node:
 
     def __add__(self, other):
         assert isinstance(other, Node), "Can only add Node instances"
-        self.points = np.concatenate((self.points, other.points), axis=0)
-        self.colors = np.concatenate((self.colors, other.colors), axis=0)
-        self.clean_pointcloud()
-        return self
+        points = np.concatenate((self.points, other.points), axis=0)
+        colors = np.concatenate((self.colors, other.colors), axis=0)
+        #self.clean_pointcloud()
+        return Node(self.str_label, points, colors)
 
 def semantic_graph_from_json(state_json, display = False):
     G = nx.DiGraph()
@@ -148,17 +147,22 @@ def semantic_graph_from_json(state_json, display = False):
             nodes.append(edge[0])
         if edge[2] not in nodes:
             nodes.append(edge[2])
+    
     for obj_str in nodes:
         G.add_node(obj_str, name=obj_str)
+
     for relation in state_json['object_relationships']:
-        G.add_edge(relation[0], relation[2], connection=relation[1])
+        assert relation[0] in G.nodes, f"{relation[0]} not in {G.nodes=}"
+        assert relation[2] in G.nodes, f"{relation[2]} not in {G.nodes=}"
+        G.add_edge(relation[0], relation[2], name=relation[1])
+
     if display:
         plt.figure(figsize=(12, 12))
         pos = nx.spring_layout(G)
         # Draw the graph on the specified axes
         nx.draw(G, pos=pos, with_labels=True, node_color='lightblue', node_size=1500, font_size=15)
         # Draw edge labels on the same axes
-        edge_labels = nx.get_edge_attributes(G, 'connection')
+        edge_labels = nx.get_edge_attributes(G, 'name')
         nx.draw_networkx_edge_labels(G, pos=pos, edge_labels=edge_labels, font_size=12)
         # Show without blocking, then pause
         plt.tight_layout()
@@ -182,11 +186,16 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
     labels_bboxes_list = label_vit.predict(rgb_img, nodes)
     bboxes = [bbox for _, bbox in labels_bboxes_list]
     labels = [label for label, _ in labels_bboxes_list]
+
+    #labels = []
+    #bboxes = []
+    #for node in nodes:
+    #    labels_bboxxes_list = label_vit.predict(rgb_img, [node])
+    #    labels.append(node)
+    #    bboxes.append(labels_bboxxes_list[0][1])
+    
     if display:
         draw_bounding_boxes(rgb_img, bboxes, labels)
-
-    #print(f"{bboxes=}")
-    #print(f"{labels=}")
 
     masks, scores, logits = sam_predictor.predict(rgb_img, bboxes)
 
@@ -195,13 +204,6 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
         rgb_segment[~mask] = 0
         depth_segment = depth_img.copy()
         depth_segment[~mask] = 0
-
-        if display:
-            plt.figure(figsize=(12, 12))
-            plt.imshow(rgb_segment)
-            plt.title(f"{label} Mask")
-            plt.show(block=False)
-            plt.pause(1)
 
         temp_rgb_img = o3d.geometry.Image(rgb_segment)
         temp_depth_img = o3d.geometry.Image(depth_segment)
@@ -219,25 +221,25 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
 
         obj_node = Node(label, points, colors)
         G.add_node(label, data=obj_node, name=label)
-        print(f"added_node {label=} {obj_node=}")
+        #print(f"added_node {label=} {obj_node=}")
 
     for edge in state_json["object_relationships"]:
-        G.add_edge(edge[0], edge[2], connection=edge[1])
+        assert edge[0] in G.nodes, f"{edge[0]} not in {G.nodes=}"
+        assert edge[2] in G.nodes, f"{edge[2]} not in {G.nodes=}"
+        G.add_edge(edge[0], edge[2], name=edge[1])
         
     return G
 
 def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K, depth_scale, prompt):
-    _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt)
+    _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose, display = False)
     print(state_json)
-    G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale)
+    G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=True)
     return G
 
 if __name__ == "__main__":
     from APIKeys import API_KEY
     from openai import OpenAI
-    import os
-    import cv2
-    
+
     with open("./custom_dataset/one on two/top_view.pkl", "rb") as file:
         rgb_img, depth_img, pose, K, depth_scale = pickle.load(file)
 

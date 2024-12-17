@@ -111,7 +111,7 @@ def display_graph(G, blocking = False):
     # Draw the graph on the specified axes
     nx.draw(G, pos=pos, ax=axes[0], with_labels=True, node_color='lightblue', node_size=1500, font_size=15)
     # Draw edge labels on the same axes
-    edge_labels = nx.get_edge_attributes(G, 'connection')
+    edge_labels = nx.get_edge_attributes(G, 'name')
     nx.draw_networkx_edge_labels(G, pos=pos, edge_labels=edge_labels, font_size=12, ax=axes[0])
     # Show without blocking, then pause
     plt.tight_layout()
