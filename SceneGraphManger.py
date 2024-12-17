@@ -10,14 +10,14 @@ import pickle
 from config import n_state_samples, node_match_thresh, edge_match_thresh
 from gpt_states import get_state
 
-from semantics import str_semantic_distance, node_replacement_cost, node_match_func, edge_replacement_cost, edge_match_func
+from semantics import str_semantic_distance, node_replacement_cost, node_match_func, edge_replacement_cost, edge_match_func, find_semantic_matching
 
 def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
     states = []
     for i in range(n_state_samples):
         _, state_json, _, _ = get_state(client, rgb_img, user_prompt, pose=pose, display = False)
         states.append(state_json)
-        print(f"{state_json}\n") if display else None
+        #print(f"{state_json}\n") if display else None
     graphs = []
     for state in states:
         graphs.append(semantic_graph_from_json(state))
@@ -44,38 +44,6 @@ def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
     closest_idx = np.argmin(distance_sums)
     closest_state = states[closest_idx]
     return closest_state
-
-def find_semantic_matching(str_list_1, str_list_2, thresh):
-    print(f"\nbegin matching")
-    bi_partite_graph = nx.Graph()
-    for str1 in str_list_1:
-        bi_partite_graph.add_node(f"g1_{str1}", name=str1)
-    for str2 in str_list_2:
-        bi_partite_graph.add_node(f"g2_{str2}", name=str2)
-
-    for str1 in str_list_1:
-        for str2 in str_list_2:
-            node_semantic_distance = str_semantic_distance(str1, str2)
-            bi_partite_graph.add_edge(f"g1_{str1}", f"g2_{str2}", weight = node_semantic_distance)
-
-    matching = nx.algorithms.matching.min_weight_matching(bi_partite_graph, weight="weight")
-    a2b = {}
-    b2a = {}
-    for match in matching:
-        edge_data = bi_partite_graph.get_edge_data(match[0], match[1])
-        g1_match = match[0] if match[0].startswith("g1_") else match[1]
-        g2_match = match[0] if match[0].startswith("g2_") else match[1]
-        
-        if edge_data['weight'] < thresh:
-            a2b[g1_match[3:]] = g2_match[3:]
-            b2a[g2_match[3:]] = g1_match[3:]
-            print(f"Kept ({g1_match[3:]} matches to {g2_match[3:]}) with score {edge_data['weight']}")
-        else:
-            print(f"Rejected ({g1_match[3:]} matches to {g2_match[3:]}) with score {edge_data['weight']}")
-
-
-    print()
-    return a2b, b2a
 
 def combine_nodes(G_out, G1, G2, g1_2_g2 = None, g2_to_g1 = None):
     print(f"\n\nBegin Combine Nodes")
@@ -219,14 +187,18 @@ def combine_graphs(G1, G2, display= True):
     G.graph["rgb_img"] = rgb
     G.graph["depth_img"] = depth
 
-    G = combine_nodes(G, G1, G2)
-    G = combine_edges(G, G1, G2)
+
+    g1_2_g2, g2_to_g1 = find_semantic_matching(list(G1.nodes), list(G2.nodes), node_match_thresh)
+
+    G = combine_nodes(G, G1, G2, g1_2_g2, g2_to_g1)
+    G = combine_edges(G, G1, G2, g1_2_g2, g2_to_g1)
 
     return G
 
 class Graph_Manager:
     def __init__(self):
         self.graph_history = []
+        self.last_graphed_i = 0
         self.processed_graph = None
 
         self.fig = plt.figure(figsize = (19,12))
@@ -237,6 +209,8 @@ class Graph_Manager:
         
     def update_display(self, rubbish):
         if len(self.graph_history) == 0:
+            return
+        if len(self.graph_history) == self.last_graphed_i:
             return
         G = self.processed_graph
         self.ax2d_graph.clear()
@@ -265,7 +239,7 @@ class Graph_Manager:
         self.last_graphed_i = len(self.graph_history)
 
     def add_graph(self, client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, user_prompt, display = False):
-        state = get_MonteCarlo_state(client, rgb_img, user_prompt, pose=pose, display = False)
+        state = get_MonteCarlo_state(client, rgb_img, user_prompt, pose=pose, display = True)
         print(f"\n{len(self.graph_history)}: {state}")
         PC_G = point_clound_graph_from_json(state, rgb_img, depth_img, pose, owl, sam, K, depth_scale, display = display)
         

@@ -9,6 +9,13 @@ import cv2
 
 
 def get_state_querry_prompt():
+    """
+    Returns a system prompt
+    Parameters:
+    - None
+    Returns:
+    - system prompt: str
+    """
     system_prompt = ("""
 You are a robots eyes. Your task is to analyze the scene, determine the objects present, and infer their relationships through detailed chain of thought reasoning.
 
@@ -26,10 +33,8 @@ You should output a JSON object containing the following fields:
     - List each object and the number of instances of that object.
   
 2. **Determine Object Positions**: For each object, determine its placement in relation to other objects:
-   - Is the object on another object?
-   - Is the object near another object?
    - Is the object spacially related to another object?
-   - Make sure no object is left unrelated.
+   - Capture as many relationships as you can
 
 3. **Establish Relationships**: Once object positions are determined, establish relationships following these rules:
    - Each relationship is a triple `<OBJECT1, RELATIONSHIP, OBJECT2>`, where `OBJECT1` is related to `OBJECT2` by RELATIONSHIP.
@@ -52,7 +57,8 @@ Your output should be formatted as a JSON object, like the example below:
 - Follow the reasoning steps explicitly before outputting to ensure correctness and completeness.
 - You cannot have an object in a relationship but not in the object list or saftey will be at risk
 - Ensure that the object_relationships are only made up of objects in the objects list
-- Use as specific Nouns as you can to label objects
+- Use as specific Nouns and advjectives to label objects
+- Include many relationships
 """)
     return system_prompt
 
@@ -84,6 +90,9 @@ def rotate_image(image, yaw_degrees):
 
 #helper function that formats the image for GPT api
 def encode_image(img_array):
+    """
+    Encodes image as JPEG for use with OPENAI api
+    """
     # Convert the ndarray to a PIL Image
     image = Image.fromarray(img_array)
     
@@ -98,6 +107,21 @@ def encode_image(img_array):
 
 #api calling function
 def get_state(client, rgb_image, user_prompt, pose=None, display=False):
+
+    """
+    Gets state json
+    Parameters:
+    - client: openai client
+    - rgb_image: numpy array
+    - user_prompt: str allows the user to provide more context
+
+    Returns:
+    - state_response: openai response object
+    - state_json: json with entries for objects and object relationships
+    - state_querry_system_prompt: str
+    - user_prompt: str
+    """
+
     if display:
         plt.figure()
         plt.imshow(rgb_image)
@@ -121,10 +145,6 @@ def get_state(client, rgb_image, user_prompt, pose=None, display=False):
 
     state_querry_system_prompt = get_state_querry_prompt()
 
-    #print(f"{state_querry_system_prompt=}")
-    #print()
-    #print(f"{state_querry_user_prompt=}")
-    #print()
     state_response = client.chat.completions.create(
         model=gpt_model,
         messages=[

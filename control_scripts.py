@@ -1,8 +1,19 @@
 import numpy as np
 from config import arm_speed
 import warnings
+from magpie_control import realsense_wrapper as real
+from magpie_control.ur5 import UR5_Interface as robot
 
 def get_frames(rsWrapper):
+    """
+    Gets realsense frames
+    Parameters:
+    - rsWrapper: magpie_control realsense_wrapper
+
+    Returns:
+    - colorFrame: realsense2 color frame
+    - depthframe: realsense2 depth frame
+    """
     pipe, config = rsWrapper.pipe, rsWrapper.config
     frames = pipe.wait_for_frames()
     #alignOperator = rs.align(rs.stream.color)
@@ -11,6 +22,15 @@ def get_frames(rsWrapper):
     colorFrame = frames.get_color_frame()
     return colorFrame, depthFrame
 def get_pictures(rsWrapper):
+    """
+    Gets realsense frames
+    Parameters:
+    - rsWrapper: magpie_control realsense_wrapper
+
+    Returns:
+    - color_image: numpy array
+    - depth_image: numpy array
+    """
     colorFrame, depthFrame = get_frames(rsWrapper)
     #print(f"{type(starting_img)=}")
     #print(f"{dir(starting_img)=}")
@@ -46,16 +66,20 @@ def pose_vector_distance(goal_vec, actual_pose):
     return linear_distance, angular_distance
 
 def goto_vec(UR_interface, goal_vec, warning_tolorance=0.01, failure_tolerance=0.1):
-    #print(f"{goal_vec=}")
+    """
+    Gets realsense frames
+    Parameters:
+    - UR_interface: magpie_control realsense_wrapper
+    - goal_vec: 6d vector with [x,y,z, roll, pitch, yaw]
+
+    Returns:
+    - success: boolean
+    """
     goal_matrix = UR_interface.poseVectorToMatrix(goal_vec).A
-    #print(f"{goal_matrix=}")
-    #print(type(goal_matrix))
-    #print(f"{goal_matrix[:3, 3]=}")
     UR_interface.moveL(goal_matrix, linSpeed=arm_speed, asynch=False)
     #UR_interface.move_tcp_cartesian(goal_matrix, z_offset=0)
 
     actual_pose = UR_interface.recv.getActualTCPPose()
-    #print(f"{actual_pose=}")
     linear_error, angular_error = pose_vector_distance(goal_vec, actual_pose)
     
     success = True
@@ -70,6 +94,15 @@ def goto_vec(UR_interface, goal_vec, warning_tolorance=0.01, failure_tolerance=0
     return success
 
 def get_depth_frame_intrinsics(rs_wrapper):
+    """
+    Gets realsense frames
+    Parameters:
+    - rsWrapper: magpie_control realsense_wrapper
+
+    Returns:
+    - depth_Scale: float
+    - intrinsics: realsense intrinsics object
+    """
     _, depth_frame = get_frames(rs_wrapper)
     intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
     #print(f"{dir(depth_frame.profile.as_video_stream_profile())=}")
@@ -79,12 +112,8 @@ def get_depth_frame_intrinsics(rs_wrapper):
     #print(f"{depth_scale=}")
     return depth_scale, intrinsics
 
-if __name__ == "__main__":
-    from magpie_control import realsense_wrapper as real
-    from magpie_control.ur5 import UR5_Interface as robot
+if __name__ == "__main__": 
     from config import sideview_vec, topview_vec
-    import matplotlib.pyplot as plt
-
 
     myrs = real.RealSense()
     myrs.initConnection()
