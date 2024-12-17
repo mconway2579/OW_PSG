@@ -311,7 +311,7 @@ def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K,
     _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose)
     print(state_json)
     #converts state into pointcloud graph
-    G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=True)
+    G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=False)
     return G
 
 if __name__ == "__main__":
@@ -338,5 +338,5 @@ if __name__ == "__main__":
         for obj, node in graph.nodes(data=True):
             node["data"].display()
     
-            
+    
     display_graph(graph, blocking = True)

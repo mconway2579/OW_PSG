@@ -9,7 +9,7 @@ import networkx as nx
 import pickle
 from config import n_state_samples, node_match_thresh, edge_match_thresh
 from gpt_states import get_state
-
+import pickle
 from semantics import str_semantic_distance, node_replacement_cost, node_match_func, edge_replacement_cost, edge_match_func, find_semantic_matching
 
 def get_MonteCarlo_state(client, rgb_img, user_prompt, pose, display = False):
@@ -292,7 +292,7 @@ class Graph_Manager:
     def add_graph(self, client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, user_prompt, display = False):
         state = get_MonteCarlo_state(client, rgb_img, user_prompt, pose=pose, display = True)
         print(f"\n{len(self.graph_history)}: {state}")
-        PC_G = point_clound_graph_from_json(state, rgb_img, depth_img, pose, owl, sam, K, depth_scale, display = display)
+        PC_G = point_clound_graph_from_json(state, rgb_img, depth_img, pose, owl, sam, K, depth_scale, display = False)
         
         self.graph_history.append(PC_G)
         if self.processed_graph is not None:
