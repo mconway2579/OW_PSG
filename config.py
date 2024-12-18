@@ -11,8 +11,8 @@ n_state_samples = 5 #number of state samples to get from the gpt model in the mo
 
 voxel_size = 0.002 #voxel size for points and visualisation
  
-node_match_thresh=0.25 #Cosin distance between text embeddings for two nodes to be considered the same
-edge_match_thresh=0.20 #Cosoin distance between text embeddings for two edges to be considered the same
+node_match_thresh=0.30 #Cosin distance between text embeddings for two nodes to be considered the same
+edge_match_thresh=0.30 #Cosoin distance between text embeddings for two edges to be considered the same
 
 
 #Robot stuff
