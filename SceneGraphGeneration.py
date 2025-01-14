@@ -9,7 +9,6 @@ import networkx as nx
 from gpt_states import get_state
 import time
 import pickle
-from transformers import OwlViTProcessor, OwlViTForObjectDetection
 from config import vit_model_name, voxel_size
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
@@ -26,67 +25,11 @@ class intrinsic_obj:
         self.ppy = array[5]
         self.width = width
         self.height = height
-#Class to use OWLv2
-class OWLv2:
-    def __init__(self):
-        self.processor = OwlViTProcessor.from_pretrained(vit_model_name)
-        self.model = OwlViTForObjectDetection.from_pretrained(vit_model_name)
-
-        self.model.to(torch.device("cuda")) if torch.cuda.is_available() else None
-        self.model.to(torch.device("mps")) if torch.backends.mps.is_available() else None
-        self.model.eval()  # set model to evaluation mode
-    def predict(self, img, querries):
-        """
-        Gets realsense frames
-        Parameters:
-        - img: image to produce bounding boxes in
-        - querries: list of strings whos bounding boxes we want
-
-        Returns:
-        - highest_score_boxes: list of bounding boxes associated with querries
-        """
-        inputs = self.processor(text=querries, images=img, return_tensors="pt")
-        inputs.to(torch.device("cuda")) if torch.cuda.is_available() else None
-        inputs.to(torch.device("mps")) if torch.backends.mps.is_available() else None
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        target_sizes = torch.tensor([img.shape[:2]])  # (height, width)
-
-        results = self.processor.post_process(outputs=outputs, target_sizes=target_sizes)[0]
-        #print(f"\n\n{results}\n\n")
-        scores = results["scores"]
-        labels = results["labels"]
-        boxes = results["boxes"]
-        unique_classes = torch.unique(labels)
-
-        highest_score_boxes = []
-
-        # Find the highest score box for each class
-        for cls in unique_classes:
-            # Get indices of the current class
-            class_indices = (labels == cls).nonzero(as_tuple=True)[0]
-            
-            # Get scores for the current class
-            class_scores = scores[class_indices]
-            
-            # Find the index of the maximum score
-            max_index = class_indices[torch.argmax(class_scores)]
-            
-            # Get the corresponding box and score
-            highest_score_boxes.append((querries[int(cls)], boxes[max_index].tolist()))
-        return highest_score_boxes
-
-    def __str__(self):
-        return f"OWLv2: {self.model.device}"
-    def __repr__(self):
-        return self.__str__()
-
 #Class to use sam2
 class SAM2:
     def __init__(self):
         self.sam_predictor = SAM2ImagePredictor.from_pretrained("facebook/sam2-hiera-large")
-    def predict(self, img, bbox):
+    def predict(self, img):
         """
         Gets realsense frames
         Parameters:
@@ -106,7 +49,7 @@ class SAM2:
         sam_logits = None
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=UserWarning)
-            sam_mask, sam_scores, sam_logits = self.sam_predictor.predict(box=bbox)
+            sam_mask, sam_scores, sam_logits = self.sam_predictor.predict()
 
         #print(f"{sam_mask=}")
         #print(f"{type(sam_mask)=}")
