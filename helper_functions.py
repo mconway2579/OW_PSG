@@ -88,11 +88,8 @@ def get_points(G):
     colors = []
 
     for obj, node in G.nodes(data=True):
-        points.append(node["data"].points)
-        colors.append(node["data"].colors)
-        
-        
-    
+        points.append(node["data"].pc.points)
+        colors.append(node["data"].pc.colors)
     points = np.concatenate(points, axis=0)
     colors = np.concatenate(colors, axis=0)
 

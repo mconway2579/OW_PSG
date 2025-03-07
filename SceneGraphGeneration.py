@@ -10,7 +10,7 @@ from gpt_states import get_state
 import time
 import pickle
 from transformers import OwlViTProcessor, OwlViTForObjectDetection
-from config import vit_model_name, voxel_size
+from config import OWL_model_name, voxel_size
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 #Class to mirror the realsense intrinsic object
@@ -29,8 +29,8 @@ class intrinsic_obj:
 #Class to use OWLv2
 class OWLv2:
     def __init__(self):
-        self.processor = OwlViTProcessor.from_pretrained(vit_model_name)
-        self.model = OwlViTForObjectDetection.from_pretrained(vit_model_name)
+        self.processor = OwlViTProcessor.from_pretrained(OWL_model_name)
+        self.model = OwlViTForObjectDetection.from_pretrained(OWL_model_name)
 
         self.model.to(torch.device("cuda")) if torch.cuda.is_available() else None
         self.model.to(torch.device("mps")) if torch.backends.mps.is_available() else None
@@ -53,7 +53,7 @@ class OWLv2:
             outputs = self.model(**inputs)
         target_sizes = torch.tensor([img.shape[:2]])  # (height, width)
 
-        results = self.processor.post_process(outputs=outputs, target_sizes=target_sizes)[0]
+        results = self.processor.post_process_grounded_object_detection(outputs=outputs, target_sizes=target_sizes, threshold=0)[0]
         #print(f"\n\n{results}\n\n")
         scores = results["scores"]
         labels = results["labels"]
@@ -125,13 +125,12 @@ class SAM2:
 
 #PointCloud class stored as data attribute in an nx graph
 class PointCloud:
-    def __init__(self, str_label, points, colors):
+    def __init__(self, points, colors):
         """
         A Point Cloud has a string label
         points in 3d space in the world frame
         colors for each point
         """
-        self.str_label = str_label
         self.points = points
         self.colors = colors
         self.clean_pointcloud()
@@ -151,14 +150,14 @@ class PointCloud:
         self.points = np.asarray(pcd.points)
         self.colors = np.asarray(pcd.colors)
 
-    def display(self, blocking = False):
+    def display(self, blocking = False, title_str=""):
         fig = plt.figure(figsize=(12, 12))
         ax = fig.add_subplot(111, projection='3d')
         ax.scatter(self.points[:,0], self.points[:,1], self.points[:,2], c=self.colors, s=1)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
-        plt.title(f"{self.str_label} Point Cloud")
+        plt.title(title_str)
         plt.show(block = blocking)
         if not blocking:
             plt.pause(1)
@@ -167,8 +166,38 @@ class PointCloud:
         assert isinstance(other, PointCloud), "Can only add point cloud instances"
         points = np.concatenate((self.points, other.points), axis=0)
         colors = np.concatenate((self.colors, other.colors), axis=0)
-        #self.clean_pointcloud()
-        return PointCloud(self.str_label, points, colors)
+        self.clean_pointcloud()
+        return PointCloud(points, colors)
+
+
+class NodeData:
+    def __init__(self, str_label, images, pointcloud):
+        self.str_label = str_label
+        self.images = images
+        self.pc = pointcloud
+    def add_image(self, image):
+        self.images.append(image)
+    def add_pointcloud(self, pointcloud):
+        self.pc = self.pc + pointcloud
+    def display(self, blocking = False):
+        fig_side_length = int(np.ceil(np.sqrt(len(self.images))))
+        fig, axes = plt.subplots(ncols=fig_side_length, nrows=fig_side_length, figsize=(12, 12))
+        if not hasattr(axes, '__iter__'):
+            axes = [axes]
+        # If axes is a 2D array, flatten it.
+        elif hasattr(axes, "ndim") and axes.ndim == 2:
+            axes = axes.flatten()
+        for i, image in enumerate(self.images):
+            axes[i].imshow(image)
+            axes[i].set_title(f"{self.str_label} image {i}")
+        plt.show(block = False)
+        self.pc.display(blocking = False, title_str=f"{self.str_label} point cloud")
+    def __add__(self, other):
+        assert isinstance(other, NodeData), "Can only add node data instances"
+        return NodeData(self.str_label, self.images + other.images, self.pc + other.pc)
+class StrData:
+    def __init__(self, str_label):
+        self.str_label = str_label
 
 def semantic_graph_from_json(state_json, display = False):
     """
@@ -188,7 +217,7 @@ def semantic_graph_from_json(state_json, display = False):
             nodes.append(edge[2])
     
     for obj_str in nodes:
-        G.add_node(obj_str, name=obj_str)
+        G.add_node(obj_str, data=StrData(obj_str))
 
     for relation in state_json['object_relationships']:
         assert relation[0] in G.nodes, f"{relation[0]} not in {G.nodes=}"
@@ -209,7 +238,7 @@ def semantic_graph_from_json(state_json, display = False):
         plt.pause(1)
     return G
 
-def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display = False):
+def dataRich_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display = False):
     """
     Given a json like 
     {
@@ -272,8 +301,8 @@ def point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit
         points = np.asarray(pcd.points)
         colors = np.asarray(pcd.colors)
 
-        obj_node = PointCloud(label, points, colors)
-        G.add_node(label, data=obj_node, name=label)
+        obj_node = NodeData(label, [rgb_segment], PointCloud(points, colors))
+        G.add_node(label, data=obj_node)
 
         if display:
             fig = plt.figure(figsize=(12, 12))
@@ -311,7 +340,7 @@ def get_graph(OAI_Client, label_vit, sam_predictor, rgb_img, depth_img, pose, K,
     _, state_json, _, _ = get_state(OAI_Client, rgb_img, prompt, pose=pose)
     print(state_json)
     #converts state into pointcloud graph
-    G = point_clound_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=False)
+    G = dataRich_graph_from_json(state_json, rgb_img, depth_img, pose, label_vit, sam_predictor, K, depth_scale, display=False)
     return G
 
 if __name__ == "__main__":
@@ -335,7 +364,7 @@ if __name__ == "__main__":
     prompt = "how are objects layed out on the table?"
     graph = get_graph(client, owl, sam, rgb_img, depth_img, pose, K, depth_scale, prompt)
     if False:
-        for obj, node in graph.nodes(data=True):
+        for obj, node in list(graph.nodes(data=True))[:]:
             node["data"].display()
     
     

@@ -1,5 +1,5 @@
 vit_thresh = 0.001 #unused
-vit_model_name = "google/owlvit-base-patch32" #vit model to use for bounding boxes
+OWL_model_name = "google/owlvit-base-patch32" #vit model to use for bounding boxes
 
 gpt_model = "gpt-4o" #gpt model to use for image understanding
 gpt_temp = 1 #gpt tempt parameter
@@ -7,12 +7,15 @@ gpt_temp = 1 #gpt tempt parameter
 
 st_embedding_model = 'all-MiniLM-L6-v2' #sentence transformer model to get text embeddings
 gpt_embedding_model = "text-embedding-3-large" #gpt model to get text embeddings
+vit_str = "google/vit-base-patch16-224"
+str_dist_weight = 0.2 #weight of text embeddings in the data rich distance calculation
+
 n_state_samples = 5 #number of state samples to get from the gpt model in the montecarlo process
 
 voxel_size = 0.002 #voxel size for points and visualisation
  
-node_match_thresh=0.30 #Cosin distance between text embeddings for two nodes to be considered the same
-edge_match_thresh=0.30 #Cosoin distance between text embeddings for two edges to be considered the same
+node_match_thresh=0.5 #Sum of Cosin distance between text embeddings for two nodes to be considered the same
+str_match_thresh=0.5 #Cosoin distance between text embeddings for two strings to be considered the same
 
 
 #Robot stuff
